@@ -1,6 +1,6 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Stratum MC <build@stratum.mc>
-Date: Fri, 30 May 2026 00:00:00 +0000
+Date: Sat, 30 May 2026 00:00:00 +0000
 Subject: [PATCH] Stratum-ST-command
 
 
@@ -51,10 +51,10 @@ index 0000000000000000000000000000000000000000..43059d24dba379c985b02a2ce1c511ed
 +}
 diff --git a/mc/stratum/commands/StratumCommand.java b/mc/stratum/commands/StratumCommand.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..7fa5c80cfd82d122f0fb2a95c623a049d0f49a78
+index 0000000000000000000000000000000000000000..a0c7ecb841125b0a4034ca23f9c07cc36386ed9f
 --- /dev/null
 +++ b/mc/stratum/commands/StratumCommand.java
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,401 @@
 +package mc.stratum.commands;
 +
 +import io.papermc.paper.ServerBuildInfo;
@@ -388,9 +388,7 @@ index 0000000000000000000000000000000000000000..7fa5c80cfd82d122f0fb2a95c623a049
 +                List<String> lines = java.nio.file.Files.readAllLines(bukkitYml.toPath());
 +                for (String line : lines) {
 +                    if (line.trim().startsWith("view-distance:")) {
-+                        String[] parts = line.split(":", 2);
-+                        if (parts.length < 2) continue;
-+                        String val = parts[1].trim();
++                        String val = line.split(":")[1].trim();
 +                        if (!val.equalsIgnoreCase("default")) {
 +                            StratumConfig.viewDistance = Integer.parseInt(val);
 +                            sender.sendMessage(OK + "  Imported view-distance: " + val);

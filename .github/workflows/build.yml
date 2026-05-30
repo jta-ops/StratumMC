@@ -11,6 +11,8 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -33,80 +35,67 @@ jobs:
         env:
           BUILD_NUMBER: ${{ github.run_number }}
 
-      - name: Build
+      - name: Build server
         run: ./gradlew build createPaperclipJar
         env:
           BUILD_NUMBER: ${{ github.run_number }}
-          BUILD_STARTED_AT: ${{ github.event.repository.updated_at }}
 
       - name: Build StratumBootstrap plugin
         run: ./gradlew :StratumBootstrap:jar
         env:
           BUILD_NUMBER: ${{ github.run_number }}
 
-      - name: Upload paperclip JAR
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp paper-server/build/libs/*-paperclip-*.jar dist/Stratum.jar
+          cp StratumBootstrap/build/libs/StratumBootstrap-*.jar dist/StratumBootstrap.jar
+          echo "Build #${{ github.run_number }} — $(date -u '+%Y-%m-%d %H:%M UTC')" > dist/build-info.txt
+          sha256sum dist/Stratum.jar dist/StratumBootstrap.jar >> dist/build-info.txt
+
+      - name: Upload server JAR
         uses: actions/upload-artifact@v4
         with:
-          name: stratum-paperclip
-          path: paper-server/build/libs/*-paperclip-*.jar
+          name: Stratum
+          path: dist/Stratum.jar
           retention-days: 30
 
       - name: Upload StratumBootstrap plugin
         uses: actions/upload-artifact@v4
         with:
-          name: stratum-bootstrap
-          path: StratumBootstrap/build/libs/*.jar
+          name: StratumBootstrap
+          path: dist/StratumBootstrap.jar
           retention-days: 30
 
-      - name: Upload launcher JAR
+      - name: Upload build info
         uses: actions/upload-artifact@v4
         with:
-          name: stratum-launcher
-          path: stratum-launcher/build/libs/stratum-launcher.jar
-          if-no-files-found: ignore
+          name: build-info
+          path: dist/build-info.txt
           retention-days: 30
 
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 25
-        uses: actions/setup-java@v4
-        with:
-          java-version: '25'
-          distribution: 'temurin'
-
-      - name: Configure git identity
-        run: |
-          git config --global user.name "Stratum CI"
-          git config --global user.email "ci@stratum.mc"
-
-      - name: Build release artifacts
-        run: ./gradlew applyPatches build createPaperclipJar
-        env:
-          BUILD_NUMBER: ${{ github.run_number }}
-
-      - name: Sign JAR (Ed25519)
-        run: |
-          if [ -f "$SIGN_KEY_PATH" ]; then
-            JAR=$(find paper-server/build/libs -name "*-paperclip-*.jar" | head -1)
-            openssl pkeyutl -sign -inkey "$SIGN_KEY_PATH" -rawin -in "$JAR" | base64 > "${JAR}.sig"
-            echo "Signed: $JAR"
-          else
-            echo "No signing key found — skipping signature"
-          fi
-        env:
-          SIGN_KEY_PATH: /tmp/stratum_private.pem
-
       - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: build-${{ github.run_number }}
+          name: "Build #${{ github.run_number }}"
+          body: |
+            Automated build from commit ${{ github.sha }}
+
+            **Stratum MC** — High-performance Minecraft server software built on Paper.
+
+            ### Installation
+            ```bash
+            curl stratumserver.net/cli | bash
+            ```
+
+            ### Files
+            - `Stratum.jar` — Server software (drop-in Paper replacement)
+            - `StratumBootstrap.jar` — Bootstrap plugin (auto-installed on startup)
           files: |
-            paper-server/build/libs/*-paperclip-*.jar
-            paper-server/build/libs/*-paperclip-*.jar.sig
-          generate_release_notes: true
+            dist/Stratum.jar
+            dist/StratumBootstrap.jar
+            dist/build-info.txt
+          generate_release_notes: false
+          prerelease: false

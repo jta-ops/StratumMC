@@ -1,9 +1,73 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Stratum MC <build@stratum.mc>
-Date: Fri, 30 May 2026 00:00:00 +0000
+Date: Sat, 30 May 2026 00:00:00 +0000
 Subject: [PATCH] Stratum-bootstrap
 
 
+diff --git a/mc/stratum/StratumPluginInstaller.java b/mc/stratum/StratumPluginInstaller.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d950e26b9ca266e38b823be33f2288710e1ddbe3
+--- /dev/null
++++ b/mc/stratum/StratumPluginInstaller.java
+@@ -0,0 +1,58 @@
++package mc.stratum;
++
++import org.apache.logging.log4j.LogManager;
++import org.apache.logging.log4j.Logger;
++
++import java.io.File;
++import java.io.InputStream;
++import java.net.URI;
++import java.net.http.HttpClient;
++import java.net.http.HttpRequest;
++import java.net.http.HttpResponse;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.StandardCopyOption;
++import java.time.Duration;
++
++/**
++ * Downloads and updates the StratumBootstrap plugin from stratumserver.net on every startup.
++ */
++public final class StratumPluginInstaller {
++
++    private static final Logger LOGGER = LogManager.getLogger("StratumPluginInstaller");
++    private static final String DOWNLOAD_URL = "https://stratumserver.net/downloads/StratumBootstrap.jar";
++    private static final String PLUGIN_FILENAME = "StratumBootstrap.jar";
++
++    private StratumPluginInstaller() {}
++
++    public static void installOrUpdate() {
++        final File pluginsDir = new File("plugins");
++        pluginsDir.mkdirs();
++
++        final Path dest = pluginsDir.toPath().resolve(PLUGIN_FILENAME);
++
++        try {
++            final HttpClient client = HttpClient.newBuilder()
++                .connectTimeout(Duration.ofSeconds(10))
++                .followRedirects(HttpClient.Redirect.NORMAL)
++                .build();
++
++            final HttpRequest request = HttpRequest.newBuilder()
++                .uri(URI.create(DOWNLOAD_URL))
++                .timeout(Duration.ofSeconds(30))
++                .GET()
++                .build();
++
++            final HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
++
++            if (response.statusCode() == 200) {
++                Files.copy(response.body(), dest, StandardCopyOption.REPLACE_EXISTING);
++                LOGGER.info("[Stratum] StratumBootstrap plugin installed/updated from {}", DOWNLOAD_URL);
++            } else {
++                LOGGER.warn("[Stratum] Failed to download StratumBootstrap (HTTP {}), skipping update.", response.statusCode());
++            }
++        } catch (Exception ex) {
++            LOGGER.warn("[Stratum] Could not reach {} to update plugin: {}", DOWNLOAD_URL, ex.getMessage());
++        }
++    }
++}
 diff --git a/mc/stratum/StratumServer.java b/mc/stratum/StratumServer.java
 new file mode 100644
 index 0000000000000000000000000000000000000000..e54c8d9ad2585cc08fc1499cd9822b339c6577a3
@@ -242,70 +306,6 @@ index 0000000000000000000000000000000000000000..e54c8d9ad2585cc08fc1499cd9822b33
 +        } catch (Exception ex) {
 +            LOGGER.warn("[Stratum] Could not register listener {}: {}",
 +                    listener.getClass().getSimpleName(), ex.getMessage());
-+        }
-+    }
-+}
-diff --git a/mc/stratum/StratumPluginInstaller.java b/mc/stratum/StratumPluginInstaller.java
-new file mode 100644
-index 0000000000000000000000000000000000000000..d950e26b9ca266e38b823be33f2288710e1ddbe3
---- /dev/null
-+++ b/mc/stratum/StratumPluginInstaller.java
-@@ -0,0 +1,58 @@
-+package mc.stratum;
-+
-+import org.apache.logging.log4j.LogManager;
-+import org.apache.logging.log4j.Logger;
-+
-+import java.io.File;
-+import java.io.InputStream;
-+import java.net.URI;
-+import java.net.http.HttpClient;
-+import java.net.http.HttpRequest;
-+import java.net.http.HttpResponse;
-+import java.nio.file.Files;
-+import java.nio.file.Path;
-+import java.nio.file.StandardCopyOption;
-+import java.time.Duration;
-+
-+/**
-+ * Downloads and updates the StratumBootstrap plugin from stratumserver.net on every startup.
-+ */
-+public final class StratumPluginInstaller {
-+
-+    private static final Logger LOGGER = LogManager.getLogger("StratumPluginInstaller");
-+    private static final String DOWNLOAD_URL = "https://stratumserver.net/downloads/StratumBootstrap.jar";
-+    private static final String PLUGIN_FILENAME = "StratumBootstrap.jar";
-+
-+    private StratumPluginInstaller() {}
-+
-+    public static void installOrUpdate() {
-+        final File pluginsDir = new File("plugins");
-+        pluginsDir.mkdirs();
-+
-+        final Path dest = pluginsDir.toPath().resolve(PLUGIN_FILENAME);
-+
-+        try {
-+            final HttpClient client = HttpClient.newBuilder()
-+                .connectTimeout(Duration.ofSeconds(10))
-+                .followRedirects(HttpClient.Redirect.NORMAL)
-+                .build();
-+
-+            final HttpRequest request = HttpRequest.newBuilder()
-+                .uri(URI.create(DOWNLOAD_URL))
-+                .timeout(Duration.ofSeconds(30))
-+                .GET()
-+                .build();
-+
-+            final HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-+
-+            if (response.statusCode() == 200) {
-+                Files.copy(response.body(), dest, StandardCopyOption.REPLACE_EXISTING);
-+                LOGGER.info("[Stratum] StratumBootstrap plugin installed/updated from {}", DOWNLOAD_URL);
-+            } else {
-+                LOGGER.warn("[Stratum] Failed to download StratumBootstrap (HTTP {}), skipping update.", response.statusCode());
-+            }
-+        } catch (Exception ex) {
-+            LOGGER.warn("[Stratum] Could not reach {} to update plugin: {}", DOWNLOAD_URL, ex.getMessage());
 +        }
 +    }
 +}

@@ -1,49 +1,62 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Stratum MC <build@stratum.mc>
-Date: Fri, 30 May 2026 00:00:00 +0000
+Date: Sat, 30 May 2026 00:00:00 +0000
 Subject: [PATCH] Stratum-console-theming
 
 
 diff --git a/mc/stratum/console/StratumBanner.java b/mc/stratum/console/StratumBanner.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..5661ea88cc2bf19ec85f3121e435c18908451a80
+index 0000000000000000000000000000000000000000..0f79f43d20652b3301080bbce1f620b56af8ea18
 --- /dev/null
 +++ b/mc/stratum/console/StratumBanner.java
-@@ -0,0 +1,80 @@
+@@ -0,0 +1,73 @@
 +package mc.stratum.console;
 +
 +import io.papermc.paper.ServerBuildInfo;
 +import org.apache.logging.log4j.Logger;
 +
-+import java.io.BufferedReader;
-+import java.io.InputStreamReader;
-+import java.net.HttpURLConnection;
-+import java.net.URL;
-+import java.nio.charset.StandardCharsets;
-+
++/**
++ * Prints the Stratum MC ASCII banner to the server console on startup.
++ *
++ * <p>The banner uses ANSI escape codes to produce a blue→cyan gradient.
++ * Each row of ASCII art uses a slightly shifted hue so the text appears
++ * to shimmer across the blue/cyan spectrum.
++ */
 +public final class StratumBanner {
 +
-+    private static final String BANNER_URL = "https://stratumserver.net/api/banner";
++    // ── ANSI gradient colours (blue→cyan) ─────────────────────────────────────
 +    private static final String[] GRADIENT = {
-+        "\u001B[38;5;19m",
-+        "\u001B[38;5;20m",
-+        "\u001B[38;5;21m",
-+        "\u001B[38;5;27m",
-+        "\u001B[38;5;33m",
-+        "\u001B[38;5;39m",
-+        "\u001B[38;5;45m",
-+        "\u001B[38;5;51m",
++        "[38;5;19m",   // deep blue
++        "[38;5;20m",
++        "[38;5;21m",
++        "[38;5;27m",
++        "[38;5;33m",
++        "[38;5;39m",
++        "[38;5;45m",
++        "[38;5;51m",   // bright cyan
 +    };
-+    private static final String RESET = "\u001B[0m";
-+    private static final String BOLD  = "\u001B[1m";
-+    private static final String GOLD  = "\u001B[38;5;220m";
++    private static final String RESET    = "[0m";
++    private static final String BOLD     = "[1m";
++    private static final String GOLD     = "[38;5;220m";
 +
-+    private static final String[] FALLBACK_ART = {
-+        "  STRATUM",
++    // ── ASCII art for "STRATUM MC" ─────────────────────────────────────────────
++    // Each inner array = one row across all letters
++    private static final String[] ART = {
++        " _____ _____ ____  ___  _____ _   _ __  __ ____ ",
++        "/  ___|_   _|  _ \\/ _ \\|_   _| | | |  \\/  / ___|",
++        "\\ `--.  | | | |_) / /_\\ \\ | | | | | | |\\/| | |   ",
++        " `--. \\ | | |    /|  _  | | | | |_| | |  | | |___",
++        "/\\__/ /_| |_| |\\ \\| | | | | | |___,_|_|  |_|\\____|",
++        "\\____/ \\___/_| \\_\\_| |_/ \\_/             MC       ",
 +    };
 +
 +    private StratumBanner() {}
 +
++    /**
++     * Logs the ASCII banner and version info via the provided Log4j2 logger.
++     *
++     * @param logger the logger to write to
++     */
 +    public static void print(final Logger logger) {
 +        final ServerBuildInfo build = ServerBuildInfo.buildInfo();
 +        final String version     = build.minecraftVersionId();
@@ -51,14 +64,16 @@ index 0000000000000000000000000000000000000000..5661ea88cc2bf19ec85f3121e435c189
 +                ? String.valueOf(build.buildNumber().getAsInt()) : "DEV";
 +        final String commit      = build.gitCommit().orElse("unknown");
 +
-+        String[] art = fetchBanner();
-+        if (art == null) art = FALLBACK_ART;
-+
++        // blank line before banner
 +        logger.info("");
-+        for (int i = 0; i < art.length; i++) {
++
++        for (int i = 0; i < ART.length; i++) {
 +            final String colour = GRADIENT[i % GRADIENT.length];
-+            logger.info(colour + BOLD + "  " + art[i] + RESET);
++            // Log4j will strip ANSI codes if the appender is not a terminal,
++            // but StratumLogLayout passes them through intact.
++            logger.info(colour + BOLD + ART[i] + RESET);
 +        }
++
 +        logger.info("");
 +        logger.info(GOLD + BOLD + "  Stratum MC  " + RESET
 +                + "Minecraft " + version
@@ -66,28 +81,6 @@ index 0000000000000000000000000000000000000000..5661ea88cc2bf19ec85f3121e435c189
 +                + "  |  git@" + commit);
 +        logger.info(GOLD + "  stratumserver.net" + RESET);
 +        logger.info("");
-+    }
-+
-+    private static String[] fetchBanner() {
-+        try {
-+            URL url = new URL(BANNER_URL);
-+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-+            conn.setRequestMethod("GET");
-+            conn.setConnectTimeout(3000);
-+            conn.setReadTimeout(3000);
-+            if (conn.getResponseCode() != 200) { conn.disconnect(); return null; }
-+            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
-+            java.util.List<String> lines = new java.util.ArrayList<>();
-+            String line;
-+            while ((line = reader.readLine()) != null) {
-+                if (!line.trim().isEmpty()) lines.add(line);
-+            }
-+            reader.close();
-+            conn.disconnect();
-+            return lines.isEmpty() ? null : lines.toArray(new String[0]);
-+        } catch (Exception e) {
-+            return null;
-+        }
 +    }
 +}
 diff --git a/mc/stratum/console/StratumLogLayout.java b/mc/stratum/console/StratumLogLayout.java
