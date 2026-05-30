@@ -55,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stratum-bootstrap
-          path: StratumBootstrap/build/libs/StratumBootstrap-*.jar
+          path: StratumBootstrap/build/libs/*.jar
           retention-days: 30
 
       - name: Upload launcher JAR
