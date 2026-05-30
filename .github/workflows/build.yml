@@ -69,6 +69,11 @@ jobs:
           java-version: '25'
           distribution: 'temurin'
 
+      - name: Configure git identity
+        run: |
+          git config --global user.name "Stratum CI"
+          git config --global user.email "ci@stratum.mc"
+
       - name: Build release artifacts
         run: ./gradlew applyPatches build createPaperclipJar
         env:
