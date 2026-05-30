@@ -1,0 +1,60 @@
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  Stratum MC — Default Configuration                                     │
+# │  File: stratum.yml                                                       │
+# │  Documentation: https://docs.stratum.mc/config                          │
+# └─────────────────────────────────────────────────────────────────────────┘
+
+# ── Console ────────────────────────────────────────────────────────────────────
+console:
+  # Apply ANSI colour coding to console log output.
+  # INFO=bold white, WARN=yellow, ERROR=bold red, DEBUG=dim cyan.
+  # Disable if your terminal does not support ANSI escape codes.
+  theming-enabled: true
+
+  # Show a live status bar at the bottom of the console terminal.
+  # Displays TPS, player count, RAM usage and MSPT.
+  # Requires a JLine-capable terminal (standard on Paper).
+  status-line-enabled: true
+
+# ── Prometheus Metrics ─────────────────────────────────────────────────────────
+metrics:
+  # Expose a Prometheus-format /metrics endpoint.
+  # Point your Prometheus scraper at http://<server-ip>:<port>/metrics.
+  enabled: false
+
+  # TCP port the metrics HTTP server listens on.
+  port: 9225
+
+# ── Tweaks ─────────────────────────────────────────────────────────────────────
+tweaks:
+  # Automatically fetch and apply new tweaks from the Stratum API on startup.
+  auto-fetch: true
+
+  # Base URL for the Stratum API used for tweak and version checks.
+  api-url: "https://api.stratum.mc"
+
+# ── Addons ─────────────────────────────────────────────────────────────────────
+addons:
+  # Automatically download new addons listed in the remote manifest on startup.
+  # Addons are always signature-verified before loading regardless of this setting.
+  auto-fetch: false
+
+# ── World ──────────────────────────────────────────────────────────────────────
+world:
+  # Number of chunks rendered/sent to clients in each direction.
+  # Higher = more bandwidth + CPU load.
+  view-distance: 10
+
+  # Number of chunks where game logic (mobs, redstone, crops) runs.
+  # Must be ≤ view-distance. Lower = better performance.
+  simulation-distance: 6
+
+  # Global mob spawn cap (Bukkit percentage of the default 70).
+  # Lower values reduce mob counts and improve performance.
+  mob-spawn-cap: 70
+
+# ── Performance ────────────────────────────────────────────────────────────────
+performance:
+  # Number of threads used for async chunk loading/generation.
+  # Set to the number of physical CPU cores for best results.
+  chunk-load-threads: 4

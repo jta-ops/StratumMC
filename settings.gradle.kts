@@ -11,27 +11,27 @@ plugins {
 
 if (!file(".git").exists()) {
     val errorText = """
-        
+
         =====================[ ERROR ]=====================
-         The Paper project directory is not a properly cloned Git repository.
-         
-         In order to build Paper from source you must clone
-         the Paper repository using Git, not download a code
+         The Stratum project directory is not a properly cloned Git repository.
+
+         In order to build Stratum from source you must clone
+         the Stratum repository using Git, not download a code
          zip from GitHub.
-         
-         Built Paper jars are available for download at
-         https://papermc.io/downloads/paper
-         
-         See https://github.com/PaperMC/Paper/blob/main/CONTRIBUTING.md
-         for further information on building and modifying Paper.
+
+         Built Stratum jars are available for download at
+         https://github.com/StratumMC/Stratum/releases
+
+         See CONTRIBUTING.md for further information on building
+         and modifying Stratum.
         ===================================================
     """.trimIndent()
     error(errorText)
 }
 
-rootProject.name = "paper"
+rootProject.name = "stratum"
 
-for (name in listOf("paper-api", "paper-server")) {
+for (name in listOf("stratum-api", "stratum-server")) {
     include(name)
     file(name).mkdirs()
 }
@@ -57,26 +57,26 @@ fun optionalInclude(name: String, op: (ProjectDescriptor.() -> Unit)? = null) {
 
 gradle.lifecycle.beforeProject {
     val mcVersion = providers.gradleProperty("mcVersion").get().trim()
-    val paperVersionChannel = providers.gradleProperty("channel").get().trim()
-    val paperBuildNumber = providers.environmentVariable("BUILD_NUMBER").orNull?.trim()?.toInt()
-    val versionString = if (paperBuildNumber == null) {
+    val stratumVersionChannel = providers.gradleProperty("channel").get().trim()
+    val stratumBuildNumber = providers.environmentVariable("BUILD_NUMBER").orNull?.trim()?.toInt()
+    val versionString = if (stratumBuildNumber == null) {
         "$mcVersion.local-SNAPSHOT"
     } else {
-        "$mcVersion.build.$paperBuildNumber-${paperVersionChannel.lowercase()}"
+        "$mcVersion.build.$stratumBuildNumber-${stratumVersionChannel.lowercase()}"
     }
     version = versionString
 }
 
-if (providers.gradleProperty("paperBuildCacheEnabled").orNull.toBoolean()) {
-    val buildCacheUsername = providers.gradleProperty("paperBuildCacheUsername").orElse("").get()
-    val buildCachePassword = providers.gradleProperty("paperBuildCachePassword").orElse("").get()
+if (providers.gradleProperty("stratumBuildCacheEnabled").orNull.toBoolean()) {
+    val buildCacheUsername = providers.gradleProperty("stratumBuildCacheUsername").orElse("").get()
+    val buildCachePassword = providers.gradleProperty("stratumBuildCachePassword").orElse("").get()
     if (buildCacheUsername.isBlank() || buildCachePassword.isBlank()) {
-        println("The Paper remote build cache is enabled, but no credentials were provided. Remote build cache will not be used.")
+        println("The Stratum remote build cache is enabled, but no credentials were provided. Remote build cache will not be used.")
     } else {
-        val buildCacheUrl = providers.gradleProperty("paperBuildCacheUrl")
-            .orElse("https://gradle-build-cache.papermc.io/")
+        val buildCacheUrl = providers.gradleProperty("stratumBuildCacheUrl")
+            .orElse("https://gradle-build-cache.stratum.mc/")
             .get()
-        val buildCachePush = providers.gradleProperty("paperBuildCachePush").orNull?.toBoolean()
+        val buildCachePush = providers.gradleProperty("stratumBuildCachePush").orNull?.toBoolean()
             ?: System.getProperty("CI").toBoolean()
         buildCache {
             remote<HttpBuildCache> {

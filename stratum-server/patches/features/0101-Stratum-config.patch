@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <dev@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum configuration system
+
+Adds StratumConfig, a Configurate-YAML-backed configuration singleton that
+loads stratum.yml and exposes all Stratum-specific settings as static fields.
+
+diff --git a/mc/stratum/StratumConfig.java b/mc/stratum/StratumConfig.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
+--- /dev/null
++++ b/mc/stratum/StratumConfig.java
+@@ -0,0 +1,143 @@
++package mc.stratum;
++
++import org.spongepowered.configurate.CommentedConfigurationNode;
++import org.spongepowered.configurate.yaml.YamlConfigurationLoader;
++
++import java.io.File;
++import java.io.IOException;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.logging.Logger;
++
++/**
++ * Central configuration for Stratum MC.
++ * Loads from {@code stratum.yml} using Configurate.
++ *
++ * <p>All config values are exposed as public static fields so they can be read
++ * efficiently from any hot path without a map lookup.
++ */
++public final class StratumConfig {
++
++    private static final Logger LOGGER = Logger.getLogger("StratumConfig");
++    private static StratumConfig instance;
++
++    private File configFile;
++    private YamlConfigurationLoader loader;
++    private CommentedConfigurationNode root;
++
++    // ── Config fields ──────────────────────────────────────────────────────────
++
++    public static boolean consoleThemingEnabled = true;
++    public static boolean statusLineEnabled     = true;
++    public static boolean metricsEnabled        = false;
++    public static int     metricsPort           = 9225;
++
++    public static boolean tweaksAutoFetch  = true;
++    public static String  tweaksApiUrl     = "https://api.stratum.mc";
++
++    public static boolean addonsAutoFetch  = false;
++
++    public static int viewDistance        = 10;
++    public static int simulationDistance  = 6;
++    public static int mobSpawnCap         = 70;
++    public static int chunkLoadThreads    = 4;
++
++    private StratumConfig() {}
++
++    /** Returns the singleton, initialising it if necessary. */
++    public static StratumConfig get() {
++        if (instance == null) instance = new StratumConfig();
++        return instance;
++    }
++
++    /**
++     * Loads (or reloads) configuration from the given file.
++     * Missing keys are written with their defaults.
++     */
++    public void load(final File file) {
++        this.configFile = file;
++        this.loader = YamlConfigurationLoader.builder().path(file.toPath()).build();
++        try {
++            if (!file.exists()) writeDefaults(file);
++            this.root = loader.load();
++        } catch (IOException ex) {
++            LOGGER.severe("[Stratum] Failed to load stratum.yml: " + ex.getMessage());
++            this.root = CommentedConfigurationNode.root();
++        }
++        read();
++        save();
++    }
++
++    /** Writes the current field values back to stratum.yml. */
++    public void save() {
++        if (loader == null || root == null) return;
++        try {
++            set("console.theming-enabled",        consoleThemingEnabled);
++            set("console.status-line-enabled",    statusLineEnabled);
++            set("metrics.enabled",                metricsEnabled);
++            set("metrics.port",                   metricsPort);
++            set("tweaks.auto-fetch",              tweaksAutoFetch);
++            set("tweaks.api-url",                 tweaksApiUrl);
++            set("addons.auto-fetch",              addonsAutoFetch);
++            set("world.view-distance",            viewDistance);
++            set("world.simulation-distance",      simulationDistance);
++            set("world.mob-spawn-cap",            mobSpawnCap);
++            set("performance.chunk-load-threads", chunkLoadThreads);
++            loader.save(root);
++        } catch (IOException ex) {
++            LOGGER.warning("[Stratum] Failed to save stratum.yml: " + ex.getMessage());
++        }
++    }
++
++    private void read() {
++        consoleThemingEnabled = bool("console.theming-enabled",        true);
++        statusLineEnabled     = bool("console.status-line-enabled",    true);
++        metricsEnabled        = bool("metrics.enabled",                false);
++        metricsPort           = intVal("metrics.port",                 9225);
++        tweaksAutoFetch       = bool("tweaks.auto-fetch",              true);
++        tweaksApiUrl          = str("tweaks.api-url",                  "https://api.stratum.mc");
++        addonsAutoFetch       = bool("addons.auto-fetch",              false);
++        viewDistance          = intVal("world.view-distance",          10);
++        simulationDistance    = intVal("world.simulation-distance",    6);
++        mobSpawnCap           = intVal("world.mob-spawn-cap",          70);
++        chunkLoadThreads      = intVal("performance.chunk-load-threads", 4);
++    }
++
++    private boolean bool(String path, boolean def) {
++        return node(path).getBoolean(def);
++    }
++
++    private int intVal(String path, int def) {
++        return node(path).getInt(def);
++    }
++
++    private String str(String path, String def) {
++        return node(path).getString(def);
++    }
++
++    private CommentedConfigurationNode node(String dotPath) {
++        return root.node((Object[]) dotPath.split("\\."));
++    }
++
++    private void set(String dotPath, Object value) {
++        try {
++            root.node((Object[]) dotPath.split("\\.")).set(value);
++        } catch (Exception ex) {
++            LOGGER.warning("[Stratum] Could not write config key " + dotPath + ": " + ex.getMessage());
++        }
++    }
++
++    private void writeDefaults(File file) throws IOException {
++        Path path = file.toPath();
++        Files.createDirectories(path.getParent());
++        try (var stream = StratumConfig.class.getResourceAsStream("/stratum.yml.default")) {
++            if (stream != null) { Files.copy(stream, path); return; }
++        }
++        Files.createFile(path);
++    }
++}

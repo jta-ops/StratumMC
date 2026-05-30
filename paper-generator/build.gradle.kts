@@ -21,7 +21,7 @@ dependencies {
     implementation("com.squareup:javapoet:1.13.0")
     implementation(project(":paper-api"))
     implementation("io.papermc.typewriter:typewriter:1.0.1") {
-        isTransitive = false // paper-api already have everything
+        isTransitive = false // stratum-api already has everything
     }
     implementation("info.picocli:picocli:4.7.7")
     implementation("io.github.classgraph:classgraph:4.8.184")
@@ -36,14 +36,14 @@ val gameVersion = providers.gradleProperty("mcVersion")
 
 val rewriteApi = tasks.registerGenerationTask("rewriteApi", true, "api", {
     bootstrapTags = true
-    sourceSet = rootProject.layout.projectDirectory.dir("paper-api")
+    sourceSet = rootProject.layout.projectDirectory.dir("stratum-api")
 }) {
     description = "Rewrite existing API classes"
     classpath(sourceSets.main.map { it.runtimeClasspath })
 }
 
 val rewriteImpl = tasks.registerGenerationTask("rewriteImpl", true, "impl", {
-    sourceSet = rootProject.layout.projectDirectory.dir("paper-server")
+    sourceSet = rootProject.layout.projectDirectory.dir("stratum-server")
     serverClassPath.from(serverRuntimeClasspath)
 }) {
     description = "Rewrite existing implementation classes"
@@ -59,14 +59,14 @@ tasks.register("rewrite") {
 
 val generateApi = tasks.registerGenerationTask("generateApi", false, "api", {
     bootstrapTags = true
-    sourceSet = rootProject.layout.projectDirectory.dir("paper-api")
+    sourceSet = rootProject.layout.projectDirectory.dir("stratum-api")
 }) {
     description = "Generate new API classes"
     classpath(sourceSets.main.map { it.runtimeClasspath })
 }
 
 val generateImpl = tasks.registerGenerationTask("generateImpl", false, "impl", {
-    sourceSet = rootProject.layout.projectDirectory.dir("paper-server")
+    sourceSet = rootProject.layout.projectDirectory.dir("stratum-server")
 }) {
     description = "Generate new implementation classes"
     classpath(sourceSets.main.map { it.runtimeClasspath })
@@ -92,7 +92,7 @@ fun TaskContainer.registerGenerationTask(
     inputs.property("gameVersion", gameVersion)
     inputs.dir(layout.projectDirectory.dir("src/main/java")).withPathSensitivity(PathSensitivity.RELATIVE)
     mainClass = "io.papermc.generator.Main"
-    systemProperty("paper.updatingMinecraft", providers.gradleProperty("updatingMinecraft").getOrElse("false").toBoolean())
+    systemProperty("stratum.updatingMinecraft", providers.gradleProperty("updatingMinecraft").getOrElse("false").toBoolean())
 
     val provider = objects.newInstance<GenerationArgumentProvider>()
     provider.side = side
@@ -154,5 +154,5 @@ tasks.test {
     useJUnitPlatform()
 }
 
-group = "io.papermc.paper"
+group = "mc.stratum"
 version = "1.0-SNAPSHOT"

@@ -1,16 +1,16 @@
-Contributing to Paper
+Contributing to Stratum
 ==========================
-PaperMC is happy you're willing to contribute to our projects. We are usually
+StratumMC is happy you're willing to contribute to our projects. We are usually
 very lenient with all submitted PRs, but there are still some guidelines you
 can follow to make the approval process go more smoothly.
 
 ## Use a Personal Fork and not an Organization
 
-Paper will routinely modify your PR, whether it's a quick rebase or to take care
+Stratum will routinely modify your PR, whether it's a quick rebase or to take care
 of any minor nitpicks we might have. Often, it's better for us to solve these
 problems for you than make you go back and forth trying to fix them yourself.
 
-Unfortunately, if you use an organization for your PR, it prevents Paper from
+Unfortunately, if you use an organization for your PR, it prevents Stratum from
 modifying it. To avoid this, please do not use repositories on organizations
 for PRs.
 
@@ -23,7 +23,7 @@ you will most likely use this for WSL), `homebrew` (macOS / Linux), and more:
 - `git` (package `git` everywhere);
 - A Java 25 or later JDK (packages vary, use Google/DuckDuckGo/etc.).
   - [Adoptium](https://adoptium.net/) has builds for most operating systems.
-  - Paper requires JDK 25 to build, however, makes use of Gradle's
+  - Stratum requires JDK 25 to build, however, makes use of Gradle's
     [Toolchains](https://docs.gradle.org/current/userguide/toolchains.html)
     feature to allow building with only JRE 21 or later installed. (Gradle will
     automatically provision JDK 25 for compilation if it cannot find an existing
@@ -62,10 +62,10 @@ Assuming you have already forked the repository:
 1. Clone your fork to your local machine;
 2. Type `./gradlew applyPatches` in a terminal to apply the patches.
 On Windows, remove the `./` the beginning of `gradlew` commands;
-3. cd into `paper-server` for server changes, and `paper-api` for API changes.
-**Only changes made in `paper-server/src/minecraft` have to deal with the patch system.**
+3. cd into `stratum-server` for server changes, and `stratum-api` for API changes.
+**Only changes made in `stratum-server/src/minecraft` have to deal with the patch system.**
 
-`paper-server/src/minecraft` is not a git repositories in the traditional sense. Its
+`stratum-server/src/minecraft` is not a git repositories in the traditional sense. Its
 initial commits are the decompiled Minecraft source files. The per-file
 patches are applied on top of these files as a single, large commit, which is then followed
 by the individual feature-patch commits.
@@ -88,7 +88,7 @@ edit it using `git rebase`.
 0. If you have changes you are working on, type `git stash` to store them for
    later;
     - You can type `git stash pop` to get them back at any point.
-1. cd into `paper-server/src/minecraft/java` and run `git rebase -i base`;
+1. cd into `stratum-server/src/minecraft/java` and run `git rebase -i base`;
     - It should show something like
       [this](https://gist.github.com/zachbr/21e92993cb99f62ffd7905d7b02f3159) in
       the text editor you get.
@@ -97,7 +97,7 @@ edit it using `git rebase`.
       learn, enter `:q!` and press enter. Before redoing this step, do
       `export EDITOR=nano` for an easier editor to use.
 1. Replace `pick` with `edit` for the commit/patch you want to modify (in this
-   case the very first commit, `paper File Patches`), and
+   case the very first commit, `Stratum File Patches`), and
    "save" the changes;
 1. Make the changes you want to make to the patch;
 1. Run `git add .` to add your changes;
@@ -109,18 +109,18 @@ edit it using `git rebase`.
 
 Feature patches are exclusively used for large-scale changes that are hard to
 track and maintain and that can be optionally dropped, such as the more involved
-optimizations we have. This makes it easier to update Paper during Minecraft updates,
+optimizations we have. This makes it easier to update Stratum during Minecraft updates,
 since we can temporarily drop these patches and reapply them later.
 
 There is only a very small chance that you will have to use this system, but adding
 such patches is very simple:
 
-1. Modify `paper-server/src/minecraft` with the appropriate changes;
+1. Modify `stratum-server/src/minecraft` with the appropriate changes;
 1. Run `git add .` inside that directory to add your changes;
 1. Run `git commit` with the desired patch message;
 1. Run `./gradlew rebuildPatches` in the root directory.
 
-Your commit will be converted into a patch that you can then PR into Paper.
+Your commit will be converted into a patch that you can then PR into Stratum.
 
 > ❗ Please note that if you have some specific implementation detail you'd like
 > to document, you should do so in the patch message *or* in comments.
@@ -168,7 +168,7 @@ fixup method.
 ## Rebasing PRs
 
 Steps to rebase a PR to include the latest changes from `main`.  
-These steps assume the `origin` remote is your fork of this repository and `upstream` is the official PaperMC repository.
+These steps assume the `origin` remote is your fork of this repository and `upstream` is the official StratumMC repository.
 
 1. Fetch the latest changes from upstream's main: `git fetch upstream`.
 1. Checkout your feature/fix branch and rebase on main: `git switch patch-branch && git rebase upstream/main`.
@@ -185,7 +185,7 @@ These steps assume the `origin` remote is your fork of this repository and `upst
 
 We'll accept changes that make sense. You should be able to justify their
 existence, along with any maintenance costs that come with them.
-Remember that these changes will affect everyone who runs Paper, not just you
+Remember that these changes will affect everyone who runs Stratum, not just you
 and your server.
 
 While we will fix minor formatting issues, you should stick to the guide below
@@ -198,10 +198,10 @@ the latest Minecraft release happens.
 
 If a new Minecraft release is imminent, it may be wise to wait until it's released
 and merged to `main` to avoid having to rebase your PR, as the `main` branch will be
-frozen during this time (you can ask in the Paper Discord if you're unsure).
+frozen during this time (you can ask in the Stratum Discord if you're unsure).
 
 For old Minecraft versions - we are unlikely to accept PRs targeting any versions not
-marked as supported at https://fill-ui.papermc.io/projects/paper.
+marked as supported at https://fill-ui.papermc.io/projects/stratum.
 
 For snapshots and other pre-release versions - you should only target these branches
 for changes specific to features or changes in those versions. For example, if Copper
@@ -222,31 +222,31 @@ API and API-implementation contain a lot of these too, but they are no longer
 required.
 
 - You need to add a comment with a short and identifiable description of the patch:
-  `// Paper start - <COMMIT DESCRIPTION>`
+  `// Stratum start - <COMMIT DESCRIPTION>`
     - The comments should generally be about the reason the change was made, what
       it was before, or what the change is.
     - After the general commit description, you can add additional information either
       after a `;` or in the next line.
-- Multi-line changes start with `// Paper start - <COMMIT DESCRIPTION>` and end
-  with `// Paper end - <COMMIT DESCRIPTION>`.
-- One-line changes should have `// Paper - <COMMIT DESCRIPTION>` at the end of the line.
+- Multi-line changes start with `// Stratum start - <COMMIT DESCRIPTION>` and end
+  with `// Stratum end - <COMMIT DESCRIPTION>`.
+- One-line changes should have `// Stratum - <COMMIT DESCRIPTION>` at the end of the line.
 
 > [!NOTE]
 > These comments are incredibly important to be able to keep track of changes
 > across files and to remember what they are for, even a decade into the future.
 
-Here's an example of how to mark changes by Paper:
+Here's an example of how to mark changes by Stratum:
 
 ```java
-entity.getWorld().dontBeStupid(); // Paper - Move away from beStupid()
+entity.getWorld().dontBeStupid(); // Stratum - Move away from beStupid()
 entity.getFriends().forEach(Entity::explode);
 entity.updateFriends();
 
-// Paper start - Use plugin-set spawn
+// Stratum start - Use plugin-set spawn
 // entity.getWorld().explode(entity.getWorld().getSpawn());
 Location spawnLocation = ((CraftWorld) entity.getWorld()).getSpawnLocation();
 entity.getWorld().explode(new BlockPosition(spawnLocation.getX(), spawnLocation.getY(), spawnLocation.getZ()));
-// Paper end - Use plugin-set spawn
+// Stratum end - Use plugin-set spawn
 ```
 
 We generally follow the usual Java style (aka. Oracle style), or what is programmed
@@ -272,7 +272,7 @@ import net.minecraft.server.MinecraftServer;
 // don't add import here, use FQN like below
 
 public class SomeVanillaClass {
-    public final org.bukkit.Location newLocation; // Paper - add location
+    public final org.bukkit.Location newLocation; // Stratum - add location
 }
 ```
 
@@ -323,15 +323,15 @@ public void sendMessage(Component message) {
 
 ## Access Transformers
 Sometimes, Vanilla code already contains a field, method, or type you want to access
-but the visibility is too low (e.g. a private field in an entity class). Paper can use access transformers
-to change the visibility or remove the final modifier from fields, methods, and classes. Inside the `build-data/paper.at`
+but the visibility is too low (e.g. a private field in an entity class). Stratum can use access transformers
+to change the visibility or remove the final modifier from fields, methods, and classes. Inside the `build-data/stratum.at`
 file, you can add ATs that are applied when you `./gradlew applyPatches`. You can read about the format of ATs 
 [here](https://mcforge.readthedocs.io/en/latest/advanced/accesstransformers/#access-modifiers).
 
 <!--
 ## Patch Notes
 
-When submitting feature patches to Paper, we may ask you to add notes to the patch
+When submitting feature patches to Stratum, we may ask you to add notes to the patch
 header. While we do not require it for all changes, you should add patch notes
 when the changes you're making are technical, complex, or require an explanation
 of some kind. It is very likely that your patch will remain long after we've all
@@ -428,35 +428,35 @@ int maxPlayers = level.paperConfig().misc.maxNumOfPlayers;
 ```
 
 #### Documentation
-When adding or removing a config option, you should open a pull request in our [documentation repository](https://github.com/PaperMC/docs)
+When adding or removing a config option, you should open a pull request in our [documentation repository](https://github.com/StratumMC/docs-placeholder)
 to keep it in sync and accurate. If you're unsure whether your original change will be accepted, then it's fine to wait with making the documentation
 pull request until a maintainer has reviewed your changes. Once everything is done, the documentation pull request will be merged at the same time
 that your original pull request is.
 
 ## Testing API changes
 
-### Using the Paper Test Plugin
+### Using the Stratum Test Plugin
 
-The Paper project has a `test-plugin` module for easily testing out API changes
+The Stratum project has a `test-plugin` module for easily testing out API changes
 and additions. To use the test plugin, enable it in `test-plugin.settings.gradle.kts`,
 which will be generated after running Gradle at least once. After this, you can edit
 the test plugin, and run a server with the plugin using `./gradlew runDev` (or any
-of the other Paper run tasks).
+of the other Stratum run tasks).
 
 ### Publishing to Maven local (use in external plugins)
 
-To build and install the Paper APIs and Server to your local Maven repository, do the following:
+To build and install the Stratum APIs and Server to your local Maven repository, do the following:
 
 - Run `./gradlew publishToMavenLocal` in the base directory.
 
 If you use Gradle to build your plugin:
 - Add `mavenLocal()` as a repository. Gradle checks repositories in the order they are declared,
-  so if you also have the Paper repository added, put the local repository above Paper's.
+  so if you also have the Stratum repository added, put the local repository above Stratum's.
 - Make sure to remove `mavenLocal()` when you are done testing, see the [Gradle docs](https://docs.gradle.org/current/userguide/declaring_repositories.html#sec:case-for-maven-local)
   for more details.
 
 If you use Maven to build your plugin:
-- If you later need to use the Paper-API, you might want to remove the jar
+- If you later need to use the Stratum-API, you might want to remove the jar
   from your local Maven repository.  
   If you use Windows and don't usually build using WSL, you might not need to
   do this.

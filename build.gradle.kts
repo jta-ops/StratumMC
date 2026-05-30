@@ -16,7 +16,7 @@ subprojects {
     }
 }
 
-val paperMavenPublicUrl = "https://repo.papermc.io/repository/maven-public/"
+val stratumMavenPublicUrl = "https://repo.papermc.io/repository/maven-public/"
 
 subprojects {
     tasks.withType<JavaCompile>().configureEach {
@@ -41,13 +41,13 @@ subprojects {
 
     repositories {
         mavenCentral()
-        maven(paperMavenPublicUrl)
+        maven(stratumMavenPublicUrl)
     }
 
     extensions.configure<PublishingExtension> {
         repositories {
-            maven("https://artifactory.papermc.io/artifactory/releases/") {
-                name = "paperReleases"
+maven("https://artifactory.papermc.io/artifactory/releases/") {
+        name = "stratumReleases"
                 credentials(PasswordCredentials::class)
             }
         }
@@ -61,9 +61,9 @@ tasks.register("printMinecraftVersion") {
     }
 }
 
-tasks.register("printPaperVersion") {
-    val paperVersion = provider { project.version }
+tasks.register("printStratumVersion") {
+    val stratumVersion = provider { project.version }
     doLast {
-        println(paperVersion.get())
+        println(stratumVersion.get())
     }
 }

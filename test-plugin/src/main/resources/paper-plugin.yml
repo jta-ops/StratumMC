@@ -1,8 +1,8 @@
-name: Paper-Test-Plugin
+name: Stratum-Test-Plugin
 version: ${version}
 main: io.papermc.testplugin.TestPlugin
-description: Paper Test Plugin
-author: PaperMC
+description: Stratum Test Plugin
+author: StratumMC
 api-version: ${apiversion}
 load: STARTUP
 bootstrapper: io.papermc.testplugin.TestPluginBootstrap

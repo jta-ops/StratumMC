@@ -1,0 +1,15 @@
+# This is the Bukkit commands configuration file for Stratum.
+#
+# If you need help with the configuration or have any questions related to Stratum,
+# join us in our Discord or check the docs page.
+#
+# File Reference: https://docs.stratum.mc/stratum/reference/bukkit-commands-configuration/
+# Docs: https://docs.stratum.mc/
+# Discord: https://discord.gg/stratummc
+# Website: https://stratum.mc/
+
+command-block-overrides: []
+ignore-vanilla-permissions: false
+aliases:
+    icanhasbukkit:
+      - "version $1-"

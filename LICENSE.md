@@ -1,6 +1,6 @@
-Paper inherits its licensing from the included upstream projects.
+Stratum inherits its licensing from the included upstream projects.
 
-As such, Paper is licensed under the
+As such, Stratum is licensed under the
 [GNU General Public License version 3](licenses/GPL.md); as it inherits it from Spigot,
 who in turn inherits it from the original Bukkit and CraftBukkit projects.
 
