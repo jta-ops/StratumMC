@@ -108,7 +108,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stratum-paperclip
-          path: stratum-server/build/libs/stratum-paperclip-*.jar
+          path: stratum-server/build/libs/*-paperclip-*.jar
 
       - name: Publish Artifacts
         if: fromJSON(steps.determine.outputs.result).action == 'paperclip'
