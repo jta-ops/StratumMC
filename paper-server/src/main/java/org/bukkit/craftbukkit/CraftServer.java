@@ -602,6 +602,7 @@ public final class CraftServer implements Server {
             DefaultPermissions.registerCorePermissions();
             CraftDefaultPermissions.registerCorePermissions();
             if (!io.papermc.paper.configuration.GlobalConfiguration.get().misc.loadPermissionsYmlBeforePlugins) this.loadCustomPermissions(); // Paper
+            mc.stratum.StratumServer.getInstance().registerCommands(); // Stratum
             this.syncCommands();
         }
     }

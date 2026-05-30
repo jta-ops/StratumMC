@@ -142,7 +142,8 @@ public final class StratumConfig {
 
     private void writeDefaults(File file) throws IOException {
         Path path = file.toPath();
-        Files.createDirectories(path.getParent());
+        Path parent = path.getParent();
+        if (parent != null) Files.createDirectories(parent);
         // copy bundled default from jar resources
         try (var stream = StratumConfig.class.getResourceAsStream("/stratum.yml.default")) {
             if (stream != null) {
