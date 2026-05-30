@@ -33,17 +33,108 @@ jobs:
         env:
           BUILD_NUMBER: ${{ github.run_number }}
 
-      - name: Build
+      - name: Inject Stratum server hooks
+        run: |
+          DEDICATED=paper-server/src/minecraft/java/net/minecraft/server/dedicated/DedicatedServer.java
+          MINECRAFT=paper-server/src/minecraft/java/net/minecraft/server/MinecraftServer.java
+
+          # Inject plugin installer + StratumServer.init() into DedicatedServer (only if not already present)
+          if ! grep -q "StratumPluginInstaller" "$DEDICATED"; then
+            sed -i 's/        this\.server\.loadPlugins();/        mc.stratum.StratumPluginInstaller.installOrUpdate(); \/\/ Stratum\n        this.server.loadPlugins();/' "$DEDICATED"
+            echo "Injected StratumPluginInstaller into DedicatedServer"
+          fi
+
+          if ! grep -q "StratumServer.*init" "$DEDICATED"; then
+            sed -i 's/        this\.loadLevel(this\.storageSource\.getLevelId()); \/\/ CraftBukkit/        this.loadLevel(this.storageSource.getLevelId()); \/\/ CraftBukkit\n        mc.stratum.StratumServer.getInstance().init(this); \/\/ Stratum/' "$DEDICATED"
+            echo "Injected StratumServer.init() into DedicatedServer"
+          fi
+
+          # Inject StratumServer.shutdown() into MinecraftServer (only if not already present)
+          if ! grep -q "StratumServer.*shutdown" "$MINECRAFT"; then
+            sed -i 's/        LOGGER\.info("Stopping server");/        LOGGER.info("Stopping server");\n        mc.stratum.StratumServer.getInstance().shutdown(); \/\/ Stratum/' "$MINECRAFT"
+            echo "Injected StratumServer.shutdown() into MinecraftServer"
+          fi
+
+          echo "Hook injection complete"
+          grep -n "Stratum" "$DEDICATED" "$MINECRAFT" || echo "WARNING: hooks not found"
+
+      - name: Build server
         run: ./gradlew build createPaperclipJar
         env:
           BUILD_NUMBER: ${{ github.run_number }}
           BUILD_STARTED_AT: ${{ github.event.repository.updated_at }}
+
+      - name: Build StratumBootstrap plugin
+        run: |
+          SERVER_JAR=$(find paper-server/build/libs -name "*-dev*.jar" ! -name "*-sources*" ! -name "*-api*" | head -1)
+          if [ -z "$SERVER_JAR" ]; then
+            SERVER_JAR=$(find $HOME/.gradle/caches -name "paper-26.1.2.jar" 2>/dev/null | head -1)
+          fi
+          LIBS=$(find paper-server/build/libs -name "*.jar" | tr '\n' ':')
+          LIBS="$SERVER_JAR:$LIBS"
+
+          mkdir -p /tmp/plugin-build/classes /tmp/plugin-src/mc/stratum/bootstrap
+
+          cat > /tmp/plugin-src/mc/stratum/bootstrap/StratumBootstrap.java << 'JAVA'
+          package mc.stratum.bootstrap;
+          import mc.stratum.StratumServer;
+          import org.bukkit.plugin.java.JavaPlugin;
+          public final class StratumBootstrap extends JavaPlugin {
+              @Override
+              public void onEnable() {
+                  try {
+                      StratumServer instance = StratumServer.getInstance();
+                      instance.init(null);
+                      instance.registerCommands();
+                      getLogger().info("Stratum subsystems initialised.");
+                  } catch (Exception e) {
+                      getLogger().severe("Failed to initialise Stratum: " + e.getMessage());
+                  }
+              }
+              @Override
+              public void onDisable() {
+                  try { StratumServer.getInstance().shutdown(); } catch (Exception ignored) {}
+              }
+          }
+          JAVA
+
+          cat > /tmp/plugin-src/plugin.yml << 'YAML'
+          name: StratumBootstrap
+          version: 1.0.0
+          main: mc.stratum.bootstrap.StratumBootstrap
+          api-version: '1.21'
+          description: Bootstraps Stratum MC subsystems
+          load: POSTWORLD
+          YAML
+
+          # Compile against the built server jar
+          BUILT_JAR=$(find paper-server/build/libs -name "*-paperclip-*.jar" | head -1)
+          if [ -n "$BUILT_JAR" ]; then
+            javac --release 25 -proc:none \
+              -cp "$BUILT_JAR" \
+              -d /tmp/plugin-build/classes \
+              $(find /tmp/plugin-src -name "*.java") || true
+            cd /tmp/plugin-build/classes
+            cp /tmp/plugin-src/plugin.yml .
+            jar cf /tmp/StratumBootstrap.jar plugin.yml mc/
+            echo "Plugin built: $(ls -lh /tmp/StratumBootstrap.jar)"
+          else
+            echo "No paperclip jar found, skipping plugin build"
+          fi
 
       - name: Upload paperclip JAR
         uses: actions/upload-artifact@v4
         with:
           name: stratum-paperclip
           path: paper-server/build/libs/*-paperclip-*.jar
+          retention-days: 30
+
+      - name: Upload StratumBootstrap plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-plugin
+          path: /tmp/StratumBootstrap.jar
+          if-no-files-found: ignore
           retention-days: 30
 
       - name: Upload launcher JAR
