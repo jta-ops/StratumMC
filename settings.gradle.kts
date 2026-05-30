@@ -1,5 +1,5 @@
-rootProject.name = 'stratum'
+rootProject.name = "stratum"
 
-include('paper-api')
-include('paper-server')
-include('StratumBootstrap')
+include("paper-api")
+include("paper-server")
+include("StratumBootstrap")
