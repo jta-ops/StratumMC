@@ -12,7 +12,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/StratumServer.java
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,159 @@
 +package mc.stratum;
 +
 +import mc.stratum.addons.AddonLoader;

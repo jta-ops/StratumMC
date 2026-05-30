@@ -139,7 +139,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/console/StratumBanner.java
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,61 @@
 +package mc.stratum.console;
 +
 +import io.papermc.paper.ServerBuildInfo;
@@ -207,7 +207,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/console/StratumStatusLine.java
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,94 @@
 +package mc.stratum.console;
 +
 +import mc.stratum.StratumConfig;

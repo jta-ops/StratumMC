@@ -12,7 +12,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/update/UpdateManager.java
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,161 @@
 +package mc.stratum.update;
 +
 +import mc.stratum.audit.AuditLog;
@@ -180,7 +180,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/update/VersionNotifier.java
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,47 @@
 +package mc.stratum.update;
 +
 +import org.bukkit.event.EventHandler;

@@ -11,7 +11,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/commands/StratumCommand.java
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,247 @@
 +package mc.stratum.commands;
 +
 +import mc.stratum.StratumConfig;

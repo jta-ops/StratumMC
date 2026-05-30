@@ -12,7 +12,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/addons/AddonMeta.java
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,16 @@
 +package mc.stratum.addons;
 +
 +import java.util.List;
@@ -34,7 +34,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/addons/StratumAddon.java
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,11 @@
 +package mc.stratum.addons;
 +
 +/**
@@ -51,7 +51,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
 --- /dev/null
 +++ b/mc/stratum/addons/AddonLoader.java
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,173 @@
 +package mc.stratum.addons;
 +
 +import com.google.gson.Gson;
