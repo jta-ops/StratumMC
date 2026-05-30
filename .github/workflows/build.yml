@@ -24,7 +24,7 @@ jobs:
           cache: gradle
 
       - name: Apply patches
-        run: ./gradlew applyPatches
+        run: ./gradlew applyPatches --stacktrace
         env:
           BUILD_NUMBER: ${{ github.run_number }}
 
