@@ -158,7 +158,7 @@ public final class StratumServer {
 
         // Register via the server's command map
         final org.bukkit.command.CommandMap commandMap = Bukkit.getServer().getCommandMap();
-        final org.bukkit.command.defaults.BukkitCommand stCmd =
+        final org.bukkit.command.Command stCmd =
                 new mc.stratum.commands.STBukkitCommand("ST", executor);
         commandMap.register("stratum", stCmd);
 

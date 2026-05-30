@@ -248,7 +248,7 @@ public final class AddonLoader {
                     liveInstances.put(meta.id(), addon);
                     return;
                 }
-            } catch (ClassNotFoundException | ReflectiveOperationException ignored) {}
+            } catch (ReflectiveOperationException ignored) {}
         }
     }
 
