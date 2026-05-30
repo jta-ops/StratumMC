@@ -5,7 +5,7 @@ Subject: [PATCH] Stratum-server-hooks
 
 
 diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
-index f008e09da3c2210a0d9a6ccae4d34f959d5ae5d0..681fe56a56bad5dde1c34470a4a7f0ea86e0db71 100644
+index 6a5d404e570ede5d49c82bccc30aa75ddd58983b..12998638e9591b2c742dec000b3affa8fa0936d9 100644
 --- a/net/minecraft/server/dedicated/DedicatedServer.java
 +++ b/net/minecraft/server/dedicated/DedicatedServer.java
 @@ -333,6 +333,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
@@ -15,17 +15,20 @@ index f008e09da3c2210a0d9a6ccae4d34f959d5ae5d0..681fe56a56bad5dde1c34470a4a7f0ea
          this.server.loadPlugins();
          this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.STARTUP);
          // CraftBukkit end
-@@ -376,6 +377,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
-         LOGGER.info("Preparing level \"{}\"", this.getLevelIdName());
+@@ -377,6 +378,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         this.services.nameToIdCache().resolveOfflineUsers(!this.usesAuthentication());
+         LOGGER.info("Preparing level {}", this.getLevelIdName());
          this.loadLevel(this.storageSource.getLevelId()); // CraftBukkit
 +        mc.stratum.StratumServer.getInstance().init(this); // Stratum
          long elapsed = Util.getNanos() - levelNanoTime;
          String time = String.format(Locale.ROOT, "%.3fs", elapsed / 1.0E9);
+         LOGGER.info("Done preparing level {} ({})", this.getLevelIdName(), time); // Paper - Improve startup message, add total time
 diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
-index f18001d368d74b987b21521ac2ffe75479ba3a87..843bdad7c0141f0378eeeb0af0765abd1621572e 100644
+index cc35c6271c98615a486422d0490145227626bd85..efce534e1707cd3cd75b9ca38ccb8647f04ad256 100644
 --- a/net/minecraft/server/MinecraftServer.java
 +++ b/net/minecraft/server/MinecraftServer.java
-@@ -947,6 +947,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<Runnab
+@@ -1045,6 +1045,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<Runnab
+         }
  
          LOGGER.info("Stopping server");
 +        mc.stratum.StratumServer.getInstance().shutdown(); // Stratum
