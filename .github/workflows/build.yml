@@ -39,11 +39,23 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
           BUILD_STARTED_AT: ${{ github.event.repository.updated_at }}
 
+      - name: Build StratumBootstrap plugin
+        run: ./gradlew :StratumBootstrap:jar
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+
       - name: Upload paperclip JAR
         uses: actions/upload-artifact@v4
         with:
           name: stratum-paperclip
           path: paper-server/build/libs/*-paperclip-*.jar
+          retention-days: 30
+
+      - name: Upload StratumBootstrap plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: stratum-bootstrap
+          path: StratumBootstrap/build/libs/StratumBootstrap-*.jar
           retention-days: 30
 
       - name: Upload launcher JAR

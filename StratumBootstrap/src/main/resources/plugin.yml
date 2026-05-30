@@ -1,0 +1,12 @@
+name: StratumBootstrap
+version: '1.0.0'
+main: mc.stratum.bootstrap.StratumBootstrap
+api-version: '26'
+load: STARTUP
+description: Stratum license verification and bootstrap plugin
+website: https://stratumserver.net
+
+commands:
+  st:
+    description: Stratum license management
+    usage: /st license
