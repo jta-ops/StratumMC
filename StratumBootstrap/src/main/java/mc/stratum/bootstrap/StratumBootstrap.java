@@ -56,6 +56,8 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
     private final Set<UUID> restrictedPlayers = ConcurrentHashMap.newKeySet();
     private BukkitRunnable heartbeatTask;
     private long serverStartTime;
+    private volatile boolean updateReady = false;
+    private String currentBuild = "unknown";
 
     // ── Dashboard ────────────────────────────────────────────────────────────
     private final List<String> consoleBatch = Collections.synchronizedList(new ArrayList<>());
@@ -114,6 +116,7 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
                 startTabListTask();
                 scheduleBackups();
                 startDashTasks();
+                checkForServerUpdate();
             } catch (Exception e) {
                 getLogger().severe("License check failed: " + e.getMessage());
                 enterRestrictedMode();
@@ -644,6 +647,7 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
             case "version":  cmdVersion(sender); break;
             case "stats":    cmdStats(sender); break;
             case "restart":  cmdRestart(sender, args); break;
+            case "update":   cmdUpdate(sender); break;
             case "dash":     cmdDash(sender, args); break;
             default:         sendUsage(sender); break;
         }
@@ -656,6 +660,7 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
         sender.sendMessage(Component.text("/stb version").color(NamedTextColor.WHITE).append(Component.text(" - Version banner").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb stats").color(NamedTextColor.WHITE).append(Component.text(" - Server stats").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb restart [seconds]").color(NamedTextColor.WHITE).append(Component.text(" - Restart server").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb update").color(NamedTextColor.WHITE).append(Component.text(" - Apply server update").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb dash link").color(NamedTextColor.WHITE).append(Component.text(" - Link to dashboard (step 1)").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb dash link <code>").color(NamedTextColor.WHITE).append(Component.text(" - Confirm link (step 2)").color(NamedTextColor.GRAY)));
     }
@@ -718,6 +723,20 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
         }.runTaskTimer(this, 0L, 20L);
     }
 
+    private void cmdUpdate(CommandSender sender) {
+        if (!updateReady) {
+            File updateFile = new File(getDataFolder().getParentFile().getParentFile(), "stratum-updates/server.jar.update");
+            if (updateFile.exists()) {
+                updateReady = true;
+            } else {
+                sender.sendMessage(Component.text("No update available. The server is up to date.").color(NamedTextColor.GREEN));
+                return;
+            }
+        }
+        sender.sendMessage(Component.text("Applying server update and restarting...").color(NamedTextColor.YELLOW));
+        applyServerUpdate();
+    }
+
     // ── Utilities ─────────────────────────────────────────────────────────────
 
     private double getTps() {
@@ -765,6 +784,132 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
     }
 
     private String asString(Object val) { return val == null ? null : String.valueOf(val); }
+
+    // ── Server auto-update ──────────────────────────────────────────────
+
+    private void checkForServerUpdate() {
+        try {
+            io.papermc.paper.ServerBuildInfo build = io.papermc.paper.ServerBuildInfo.buildInfo();
+            currentBuild = build.buildNumber().isPresent() ? String.valueOf(build.buildNumber().getAsInt()) : "unknown";
+        } catch (Exception e) {
+            currentBuild = "unknown";
+        }
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                String response = sendApiRequest("GET", "/../builds/latest", null);
+                if (response == null) return;
+                Map<String, Object> map = parseJson(response);
+                String remoteVersion = asString(map.get("version"));
+                if (remoteVersion == null) return;
+                String remoteBuild = remoteVersion.contains("-") ? remoteVersion.substring(remoteVersion.lastIndexOf('-') + 1) : remoteVersion;
+                if (currentBuild.equals("unknown") || Integer.parseInt(remoteBuild) > Integer.parseInt(currentBuild)) {
+                    getLogger().info("Update available: build " + remoteBuild + " (current: " + currentBuild + ")");
+                    getLogger().info("Downloading update...");
+                    boolean downloaded = downloadServerUpdate(asString(map.get("filename")));
+                    if (downloaded) {
+                        updateReady = true;
+                        getLogger().warning("============================================================");
+                        getLogger().warning("  Server update ready! Run /stb update to apply.");
+                        getLogger().warning("  Current: build #" + currentBuild + " | New: build #" + remoteBuild);
+                        getLogger().warning("============================================================");
+                    }
+                } else {
+                    getLogger().info("Server is up to date (build #" + currentBuild + ").");
+                }
+            } catch (Exception e) {
+                getLogger().warning("Update check failed: " + e.getMessage());
+            }
+        });
+    }
+
+    private boolean downloadServerUpdate(String filename) {
+        try {
+            File updateDir = new File(getDataFolder().getParentFile().getParentFile(), "stratum-updates");
+            if (!updateDir.exists()) updateDir.mkdirs();
+            File updateFile = new File(updateDir, "server.jar.update");
+
+            String downloadUrl = SITE_BASE + "/api/builds/latest/download";
+            URL url = new URL(downloadUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(300000);
+
+            if (conn.getResponseCode() != 200) {
+                getLogger().warning("Download failed: HTTP " + conn.getResponseCode());
+                conn.disconnect();
+                return false;
+            }
+
+            java.io.InputStream in = conn.getInputStream();
+            java.io.FileOutputStream out = new java.io.FileOutputStream(updateFile);
+            byte[] buf = new byte[8192];
+            int len;
+            long total = 0;
+            while ((len = in.read(buf)) != -1) {
+                out.write(buf, 0, len);
+                total += len;
+            }
+            out.flush();
+            out.close();
+            in.close();
+            conn.disconnect();
+
+            getLogger().info("Downloaded " + (total / 1024 / 1024) + "MB to " + updateFile.getAbsolutePath());
+            return true;
+        } catch (Exception e) {
+            getLogger().severe("Failed to download update: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private void applyServerUpdate() {
+        File updateFile = new File(getDataFolder().getParentFile().getParentFile(), "stratum-updates/server.jar.update");
+        File serverJar = new File(getDataFolder().getParentFile().getParentFile(), "server.jar");
+
+        if (!updateFile.exists()) {
+            getLogger().severe("No update file found at " + updateFile.getAbsolutePath());
+            return;
+        }
+
+        try {
+            getLogger().info("Applying server update...");
+            getLogger().info("  Backup: " + serverJar.getAbsolutePath() + ".bak");
+
+            // Backup current jar
+            if (serverJar.exists()) {
+                java.nio.file.Files.copy(serverJar.toPath(), new File(serverJar.getAbsolutePath() + ".bak").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            // Copy update
+            java.nio.file.Files.copy(updateFile.toPath(), serverJar.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            updateFile.delete();
+
+            getLogger().info("Update applied! Restarting server in 5 seconds...");
+
+            // Schedule restart
+            new BukkitRunnable() {
+                int countdown = 5;
+                @Override
+                public void run() {
+                    if (countdown <= 0) {
+                        Bukkit.broadcast(net.kyori.adventure.text.Component.text("Server restarting for update...").color(net.kyori.adventure.text.format.NamedTextColor.YELLOW));
+                        Bukkit.shutdown();
+                        cancel();
+                        return;
+                    }
+                    if (countdown <= 3) {
+                        Bukkit.broadcast(net.kyori.adventure.text.Component.text("Restarting in " + countdown + "...").color(net.kyori.adventure.text.format.NamedTextColor.YELLOW));
+                    }
+                    countdown--;
+                }
+            }.runTaskTimer(this, 0L, 20L);
+
+        } catch (Exception e) {
+            getLogger().severe("Failed to apply update: " + e.getMessage());
+        }
+    }
 
     private String sendApiRequest(String method, String path, String body) {
         try {
