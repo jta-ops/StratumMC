@@ -102,14 +102,12 @@ jobs:
             **/build/test-results/test/TEST-*.xml
 
       - name: Create Paperclip Jar
-        if: fromJSON(steps.determine.outputs.result).action == 'paperclip'
         run: ./gradlew createPaperclipJar --stacktrace
 
       - name: Upload Paperclip Jar
-        if: fromJSON(steps.determine.outputs.result).action == 'paperclip'
         uses: actions/upload-artifact@v4
         with:
-          name: stratum-${{ fromJSON(steps.determine.outputs.result).pr }}
+          name: stratum-paperclip
           path: stratum-server/build/libs/stratum-paperclip-*.jar
 
       - name: Publish Artifacts
