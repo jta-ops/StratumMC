@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_DIR="/home/ubuntu/StratumMC"
+BRANCH="main"
+
+cd "$REPO_DIR"
+
+echo "==> Staging changes..."
+git add -A
+
+if git diff --cached --quiet; then
+    echo "==> No changes to commit."
+    exit 0
+fi
+
+echo "==> Committing..."
+git commit -m "Automated build: $(date +%Y-%m-%d\ %H:%M:%S)"
+
+echo "==> Pushing to origin/$BRANCH..."
+git push origin "$BRANCH"
+
+echo "==> Waiting for GitHub Actions..."
+RUN_ID=$(gh run list --repo jta-ops/StratumMC --limit 1 --json databaseId --jq '.[0].databaseId')
+echo "==> Build triggered: https://github.com/jta-ops/StratumMC/actions/runs/$RUN_ID"
+
+echo "==> Watching build..."
+gh run watch "$RUN_ID" --repo jta-ops/StratumMC --exit-status
+
+echo "==> Downloading artifact..."
+ARTIFACT_DIR="/tmp/stratum-build-latest"
+rm -rf "$ARTIFACT_DIR"
+gh run download "$RUN_ID" --repo jta-ops/StratumMC --dir "$ARTIFACT_DIR"
+
+JAR=$(find "$ARTIFACT_DIR" -name "*-paperclip-*.jar" | head -1)
+if [ -z "$JAR" ]; then
+    echo "ERROR: No paperclip jar found in artifacts"
+    ls -R "$ARTIFACT_DIR"
+    exit 1
+fi
+
+echo "==> Jar: $JAR"
+echo "==> Done!"

@@ -31,7 +31,7 @@ if (!file(".git").exists()) {
 
 rootProject.name = "stratum"
 
-for (name in listOf("stratum-api", "stratum-server")) {
+for (name in listOf("paper-api", "paper-server")) {
     include(name)
     file(name).mkdirs()
 }
