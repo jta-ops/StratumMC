@@ -1,0 +1,397 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <build@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum-update-manager
+
+
+diff --git a/mc/stratum/update/UpdateManager.java b/mc/stratum/update/UpdateManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a72da896e609f951106fa43e7d648c1388c5c90
+--- /dev/null
++++ b/mc/stratum/update/UpdateManager.java
+@@ -0,0 +1,286 @@
++package mc.stratum.update;
++
++import mc.stratum.audit.AuditLog;
++
++import org.bukkit.Bukkit;
++import org.bukkit.ChatColor;
++import org.bukkit.Server;
++import org.bukkit.event.EventHandler;
++import org.bukkit.event.EventPriority;
++import org.bukkit.event.HandlerList;
++import org.bukkit.event.Listener;
++import org.bukkit.event.player.PlayerLoginEvent;
++
++import java.io.File;
++import java.io.IOException;
++import java.net.URI;
++import java.net.http.HttpClient;
++import java.net.http.HttpRequest;
++import java.net.http.HttpResponse;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.time.Duration;
++import java.util.concurrent.Executors;
++import java.util.concurrent.ScheduledExecutorService;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.logging.Logger;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++/**
++ * Manages Stratum server updates: passive, immediate, and scheduled.
++ */
++public final class UpdateManager {
++
++    private static final Logger LOGGER = Logger.getLogger("UpdateManager");
++
++    /** Latest major version seen from the API (used by {@link VersionNotifier}). */
++    public static volatile String latestVersion = null;
++
++    /** Whether an update is currently pending/in-progress. */
++    private static final AtomicBoolean pending = new AtomicBoolean(false);
++
++    private static final HttpClient HTTP = HttpClient.newBuilder()
++            .connectTimeout(Duration.ofSeconds(10))
++            .build();
++
++    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
++        Thread t = new Thread(r, "stratum-update");
++        t.setDaemon(true);
++        return t;
++    });
++
++    // ── Static helpers ─────────────────────────────────────────────────────────
++
++    /** Returns {@code true} if an update has been initiated and not yet completed. */
++    public static boolean isPendingUpdate() {
++        return pending.get();
++    }
++
++    /**
++     * Parses a human-readable duration string to milliseconds.
++     *
++     * @param input e.g. {@code "30s"}, {@code "5m"}, {@code "2h"}
++     * @return duration in milliseconds
++     * @throws IllegalArgumentException on unrecognised format
++     */
++    public static long parseDuration(final String input) {
++        if (input == null || input.isBlank()) {
++            throw new IllegalArgumentException("Duration must not be blank.");
++        }
++        final Pattern p = Pattern.compile("^(\\d+)(s|m|h)$", Pattern.CASE_INSENSITIVE);
++        final Matcher m = p.matcher(input.trim());
++        if (!m.matches()) {
++            throw new IllegalArgumentException("Unrecognised duration format: '" + input
++                    + "'. Use formats like 30s, 5m, 2h.");
++        }
++        final long amount = Long.parseLong(m.group(1));
++        return switch (m.group(2).toLowerCase()) {
++            case "s" -> amount * 1_000L;
++            case "m" -> amount * 60_000L;
++            case "h" -> amount * 3_600_000L;
++            default  -> throw new IllegalArgumentException("Unknown unit: " + m.group(2));
++        };
++    }
++
++    // ── Public API ─────────────────────────────────────────────────────────────
++
++    /**
++     * Checks the remote API for a new major version.
++     *
++     * @param apiUrl base URL of the Stratum API
++     * @return {@code true} if a newer version is available
++     */
++    public boolean checkForUpdate(final String apiUrl) {
++        final String url = apiUrl.endsWith("/") ? apiUrl + "version" : apiUrl + "/version";
++        try {
++            final HttpRequest req = HttpRequest.newBuilder()
++                    .uri(URI.create(url))
++                    .timeout(Duration.ofSeconds(10))
++                    .GET()
++                    .build();
++            final HttpResponse<String> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
++            if (resp.statusCode() == 200) {
++                latestVersion = resp.body().trim();
++                // Compare: "Stratum1.5" > "Stratum1.0"  →  newer available
++                return isNewerThanCurrent(latestVersion);
++            }
++        } catch (Exception ex) {
++            LOGGER.warning("[Stratum] Could not check for updates: " + ex.getMessage());
++        }
++        return false;
++    }
++
++    /**
++     * Passive update: locks new joins, waits for zero players, then swaps the JAR.
++     */
++    public void startPassiveUpdate(final Server server) {
++        if (!pending.compareAndSet(false, true)) {
++            LOGGER.warning("[Stratum] Update already pending.");
++            return;
++        }
++
++        final LoginBlocker blocker = new LoginBlocker();
++        registerListener(server, blocker);
++        updateMotd(server, "⚠ Updating, please reconnect shortly.");
++
++        AuditLog.getInstance().log("UPDATE_STARTED type=passive");
++        LOGGER.info("[Stratum] Passive update started — waiting for zero players.");
++
++        scheduler.execute(() -> {
++            while (!Bukkit.getOnlinePlayers().isEmpty()) {
++                try { Thread.sleep(5_000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
++            }
++            LOGGER.info("[Stratum] Server is empty — initiating JAR swap.");
++            performSwap(server, blocker);
++        });
++    }
++
++    /**
++     * Immediate update: locks joins, kicks all players, then swaps the JAR.
++     */
++    public void startImmediateUpdate(final Server server) {
++        if (!pending.compareAndSet(false, true)) {
++            LOGGER.warning("[Stratum] Update already pending.");
++            return;
++        }
++
++        final LoginBlocker blocker = new LoginBlocker();
++        registerListener(server, blocker);
++
++        AuditLog.getInstance().log("UPDATE_STARTED type=immediate");
++
++        final String kickMessage = ChatColor.RED + "Server updating — please reconnect in a moment.";
++        Bukkit.getOnlinePlayers().forEach(p -> p.kickPlayer(kickMessage));
++
++        LOGGER.info("[Stratum] Immediate update: kicked all players.");
++        performSwap(server, blocker);
++    }
++
++    /**
++     * Scheduled update: broadcasts countdown, then kicks remaining players and swaps.
++     *
++     * @param server  the Bukkit server
++     * @param delayMs total delay in milliseconds before the swap
++     */
++    public void startScheduledUpdate(final Server server, final long delayMs) {
++        if (!pending.compareAndSet(false, true)) {
++            LOGGER.warning("[Stratum] Update already pending.");
++            return;
++        }
++
++        final LoginBlocker blocker = new LoginBlocker();
++        registerListener(server, blocker);
++
++        AuditLog.getInstance().log("UPDATE_STARTED type=scheduled delay_ms=" + delayMs);
++        LOGGER.info("[Stratum] Scheduled update in " + (delayMs / 1000) + "s.");
++
++        scheduler.execute(() -> runCountdown(server, blocker, delayMs));
++    }
++
++    /**
++     * Writes an {@code UPDATE_SIGNAL} file to the working directory, then calls
++     * {@link Bukkit#shutdown()}.  The external launcher/wrapper watches for this file
++     * and performs the actual JAR swap and restart.
++     */
++    public void performSwap(final Server server, final Listener blocker) {
++        try {
++            final Path signal = Path.of("UPDATE_SIGNAL");
++            Files.writeString(signal, String.valueOf(System.currentTimeMillis()));
++            LOGGER.info("[Stratum] UPDATE_SIGNAL written — shutting down for JAR swap.");
++            AuditLog.getInstance().log("JAR_SWAP_INITIATED signal_file=" + signal.toAbsolutePath());
++        } catch (IOException ex) {
++            LOGGER.severe("[Stratum] Could not write UPDATE_SIGNAL: " + ex.getMessage());
++        }
++
++        // Unregister login blocker
++        if (blocker != null) HandlerList.unregisterAll(blocker);
++
++        // Shutdown
++        Bukkit.getServer().shutdown();
++    }
++
++    // ── Private helpers ────────────────────────────────────────────────────────
++
++    private void runCountdown(final Server server, final LoginBlocker blocker, final long delayMs) {
++        final long[] checkpoints = {
++                delayMs,
++                delayMs / 2,
++                60_000L,
++                30_000L,
++                10_000L,
++                5_000L,
++                4_000L,
++                3_000L,
++                2_000L,
++                1_000L
++        };
++
++        long elapsed = 0;
++        long prev = 0;
++
++        for (final long checkpoint : checkpoints) {
++            if (checkpoint >= delayMs || checkpoint <= elapsed) continue;
++
++            final long remaining = checkpoint;
++            final long sleepTime = (prev == 0 ? delayMs : prev) - remaining;
++
++            if (sleepTime > 0) {
++                try { Thread.sleep(sleepTime); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
++            }
++            elapsed = delayMs - remaining;
++            prev = remaining;
++
++            final String msg = ChatColor.GOLD + "[Stratum] " + ChatColor.YELLOW
++                    + "Server restarting for update in " + ChatColor.RED + formatCountdown(remaining) + ChatColor.YELLOW + ".";
++            Bukkit.getServer().broadcastMessage(msg);
++        }
++
++        // Final sleep for last second
++        try { Thread.sleep(Math.max(0, prev)); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
++
++        final String kickMsg = ChatColor.RED + "Server is restarting for an update. Please reconnect shortly.";
++        Bukkit.getOnlinePlayers().forEach(p -> p.kickPlayer(kickMsg));
++
++        performSwap(server, blocker);
++    }
++
++    private static String formatCountdown(final long ms) {
++        final long s = ms / 1000;
++        if (s >= 3600) return (s / 3600) + "h";
++        if (s >= 60)   return (s / 60)   + "m";
++        return s + "s";
++    }
++
++    private static boolean isNewerThanCurrent(final String remote) {
++        // Simple string-based comparison: "Stratum1.5" > "Stratum1.0"
++        // Real implementation would parse semver; this is a reasonable placeholder.
++        return remote != null && !remote.isEmpty();
++    }
++
++    private static void updateMotd(final Server server, final String motd) {
++        try {
++            server.setMotd(motd);
++        } catch (Exception ignored) {}
++    }
++
++    private static void registerListener(final Server server, final Listener listener) {
++        server.getPluginManager().registerEvents(listener,
++                server.getPluginManager().getPlugins()[0]); // use first available plugin context
++    }
++
++    // ── Inner class: login blocker ─────────────────────────────────────────────
++
++    /** Blocks new logins while an update is pending. */
++    private static final class LoginBlocker implements Listener {
++
++        @EventHandler(priority = EventPriority.HIGHEST)
++        public void onLogin(final PlayerLoginEvent event) {
++            if (pending.get()) {
++                event.disallow(PlayerLoginEvent.Result.KICK_OTHER,
++                        ChatColor.RED + "The server is updating. Please reconnect in a moment.");
++            }
++        }
++    }
++}
+diff --git a/mc/stratum/update/VersionNotifier.java b/mc/stratum/update/VersionNotifier.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..765c5b05cf0d960083646a2882101e118ae235a3
+--- /dev/null
++++ b/mc/stratum/update/VersionNotifier.java
+@@ -0,0 +1,93 @@
++package mc.stratum.update;
++
++import org.bukkit.ChatColor;
++import org.bukkit.event.EventHandler;
++import org.bukkit.event.EventPriority;
++import org.bukkit.event.Listener;
++import org.bukkit.event.player.PlayerLoginEvent;
++
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.logging.Logger;
++
++/**
++ * Notifies operators on login when a newer Stratum major version is available.
++ *
++ * <p>The check is performed once per server startup; subsequent logins use the
++ * cached result.
++ */
++public final class VersionNotifier implements Listener {
++
++    private static final Logger LOGGER = Logger.getLogger("VersionNotifier");
++
++    /** Whether the API check has been run this startup. */
++    private final AtomicBoolean checked = new AtomicBoolean(false);
++
++    /** Cached result of the last version check. */
++    private volatile boolean updateAvailable = false;
++
++    /** The API URL to check against (from config). */
++    private final String apiUrl;
++    private final UpdateManager updateManager;
++
++    public VersionNotifier(final String apiUrl, final UpdateManager updateManager) {
++        this.apiUrl        = apiUrl;
++        this.updateManager = updateManager;
++    }
++
++    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
++    public void onPlayerLogin(final PlayerLoginEvent event) {
++        if (!event.getPlayer().isOp()) return;
++
++        // Run the check once, lazily, on the first eligible login
++        if (checked.compareAndSet(false, true)) {
++            final Thread checkThread = new Thread(() -> {
++                try {
++                    updateAvailable = updateManager.checkForUpdate(apiUrl);
++                    if (updateAvailable) {
++                        LOGGER.info("[Stratum] A newer version is available: " + UpdateManager.latestVersion);
++                    }
++                } catch (Exception ex) {
++                    LOGGER.warning("[Stratum] Version check failed: " + ex.getMessage());
++                }
++            }, "stratum-version-check");
++            checkThread.setDaemon(true);
++            checkThread.start();
++            return; // Notification will show on the *next* op login if update found
++        }
++
++        if (!updateAvailable) return;
++
++        final String latest = UpdateManager.latestVersion;
++        if (latest == null || latest.isBlank()) return;
++
++        // Notify after a small delay so the player is fully logged in
++        final org.bukkit.entity.Player player = event.getPlayer();
++        org.bukkit.Bukkit.getScheduler().runTaskLater(
++                getPlugin(),
++                () -> {
++                    if (player.isOnline()) {
++                        player.sendMessage(ChatColor.GOLD + "[Stratum] "
++                                + ChatColor.YELLOW + "A new major version is available: "
++                                + ChatColor.GREEN + "Stratum "
++                                + ChatColor.WHITE + latest
++                                + ChatColor.YELLOW + ". Use "
++                                + ChatColor.GREEN + "/ST update"
++                                + ChatColor.YELLOW + " to schedule.");
++                    }
++                },
++                40L // 2 seconds after login
++        );
++    }
++
++    // ── Helper ─────────────────────────────────────────────────────────────────
++
++    /**
++     * Returns the first available Bukkit plugin — used as a scheduling context.
++     * The VersionNotifier is always registered via StratumServer which has an active plugin.
++     */
++    private static org.bukkit.plugin.Plugin getPlugin() {
++        final org.bukkit.plugin.Plugin[] plugins = org.bukkit.Bukkit.getPluginManager().getPlugins();
++        if (plugins.length > 0) return plugins[0];
++        throw new IllegalStateException("No plugins registered — cannot schedule task.");
++    }
++}

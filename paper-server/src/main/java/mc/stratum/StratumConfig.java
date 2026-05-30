@@ -30,7 +30,7 @@ public final class StratumConfig {
     public static int     metricsPort           = 9225;
 
     public static boolean tweaksAutoFetch  = true;
-    public static String  tweaksApiUrl     = "https://api.stratum.mc";
+    public static String  tweaksApiUrl     = "https://stratumserver.net/api";
 
     public static boolean addonsAutoFetch  = false;
 
@@ -108,7 +108,7 @@ public final class StratumConfig {
         metricsEnabled        = bool("metrics.enabled",            false);
         metricsPort           = intVal("metrics.port",             9225);
         tweaksAutoFetch       = bool("tweaks.auto-fetch",          true);
-        tweaksApiUrl          = str("tweaks.api-url",              "https://api.stratum.mc");
+        tweaksApiUrl          = str("tweaks.api-url",              "https://stratumserver.net/api");
         addonsAutoFetch       = bool("addons.auto-fetch",          false);
         viewDistance          = intVal("world.view-distance",      10);
         simulationDistance    = intVal("world.simulation-distance", 6);

@@ -9,6 +9,8 @@ import java.io.InputStream;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.PublicKey;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -170,7 +172,14 @@ public final class AddonLoader {
             return;
         }
 
-        // 5. Load classloader and register
+        // 5. If tagged as "plugin", install into plugins/ folder and skip normal loading
+        if (meta.tags() != null && meta.tags().contains("plugin")) {
+            installAsPlugin(jar, meta);
+            installedAddons.add(meta);
+            return;
+        }
+
+        // 6. Load classloader and register
         try {
             final URLClassLoader cl = new URLClassLoader(
                     new URL[]{jar.toURI().toURL()},
@@ -187,6 +196,19 @@ public final class AddonLoader {
         } catch (Exception ex) {
             LOGGER.severe("[Stratum] Failed to load addon JAR " + jar.getName()
                     + ": " + ex.getMessage());
+        }
+    }
+
+    private static void installAsPlugin(final File jar, final AddonMeta meta) {
+        final File pluginsDir = new File("plugins");
+        pluginsDir.mkdirs();
+        final File dest = new File(pluginsDir, jar.getName());
+        try {
+            Files.copy(jar.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            AuditLog.getInstance().log("ADDON_PLUGIN_INSTALLED id=" + meta.id() + " dest=" + dest.getPath());
+            LOGGER.info("[Stratum] Installed addon as plugin: " + meta.name() + " → plugins/" + jar.getName());
+        } catch (IOException ex) {
+            LOGGER.severe("[Stratum] Failed to install addon as plugin: " + ex.getMessage());
         }
     }
 

@@ -1,0 +1,192 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <build@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum-metrics
+
+
+diff --git a/mc/stratum/metrics/StratumMetricsServer.java b/mc/stratum/metrics/StratumMetricsServer.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..bd1b0497c70e498c6f863a2b4b7f429b4cee8587
+--- /dev/null
++++ b/mc/stratum/metrics/StratumMetricsServer.java
+@@ -0,0 +1,180 @@
++package mc.stratum.metrics;
++
++import com.sun.net.httpserver.HttpExchange;
++import com.sun.net.httpserver.HttpHandler;
++import com.sun.net.httpserver.HttpServer;
++import mc.stratum.StratumConfig;
++import org.bukkit.Bukkit;
++import org.bukkit.World;
++
++import java.io.IOException;
++import java.io.OutputStream;
++import java.net.InetSocketAddress;
++import java.nio.charset.StandardCharsets;
++import java.util.concurrent.Executors;
++import java.util.logging.Logger;
++
++/**
++ * Embedded HTTP server that exposes Prometheus-format metrics on the configured port.
++ *
++ * <p>Endpoint: {@code GET /metrics} — Content-Type: {@code text/plain; version=0.0.4}
++ *
++ * <p>Exported metrics:
++ * <ul>
++ *   <li>{@code stratum_tps} (labels: period=1m/5m/15m)</li>
++ *   <li>{@code stratum_mspt}</li>
++ *   <li>{@code stratum_players_online} / {@code stratum_players_max}</li>
++ *   <li>{@code stratum_chunks_loaded}</li>
++ *   <li>{@code stratum_ram_used_bytes} / {@code stratum_ram_max_bytes}</li>
++ * </ul>
++ */
++public final class StratumMetricsServer {
++
++    private static final Logger LOGGER = Logger.getLogger("StratumMetrics");
++
++    private HttpServer httpServer;
++    private final int port;
++
++    public StratumMetricsServer(final int port) {
++        this.port = port;
++    }
++
++    // ── Public API ─────────────────────────────────────────────────────────────
++
++    /**
++     * Starts the metrics HTTP server.
++     * No-op if {@link StratumConfig#metricsEnabled} is {@code false}.
++     */
++    public void start() {
++        if (!StratumConfig.metricsEnabled) {
++            LOGGER.fine("[Stratum] Metrics server disabled by config.");
++            return;
++        }
++
++        try {
++            httpServer = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
++            httpServer.createContext("/metrics", new MetricsHandler());
++            httpServer.setExecutor(Executors.newFixedThreadPool(2, r -> {
++                final Thread t = new Thread(r, "stratum-metrics");
++                t.setDaemon(true);
++                return t;
++            }));
++            httpServer.start();
++            LOGGER.info("[Stratum] Metrics server started on :" + port + "/metrics");
++        } catch (IOException ex) {
++            LOGGER.severe("[Stratum] Failed to start metrics server on port " + port
++                    + ": " + ex.getMessage());
++        }
++    }
++
++    /** Stops the metrics HTTP server. */
++    public void stop() {
++        if (httpServer != null) {
++            httpServer.stop(0);
++            LOGGER.info("[Stratum] Metrics server stopped.");
++        }
++    }
++
++    // ── Handler ────────────────────────────────────────────────────────────────
++
++    private static final class MetricsHandler implements HttpHandler {
++
++        @Override
++        public void handle(final HttpExchange exchange) throws IOException {
++            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
++                exchange.sendResponseHeaders(405, -1);
++                return;
++            }
++
++            final String body = buildMetrics();
++            final byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
++
++            exchange.getResponseHeaders().set("Content-Type", "text/plain; version=0.0.4; charset=UTF-8");
++            exchange.sendResponseHeaders(200, bytes.length);
++            try (OutputStream os = exchange.getResponseBody()) {
++                os.write(bytes);
++            }
++        }
++
++        private static String buildMetrics() {
++            final Runtime rt = Runtime.getRuntime();
++            final long usedBytes = rt.totalMemory() - rt.freeMemory();
++            final long maxBytes  = rt.maxMemory();
++
++            final int online  = Bukkit.getOnlinePlayers().size();
++            final int maxPlrs = Bukkit.getMaxPlayers();
++            final int chunks  = countChunks();
++
++            final double[] tps = safeTps();
++            final double mspt  = Bukkit.getServer().getAverageTickTime();
++
++            final StringBuilder sb = new StringBuilder(512);
++
++            // TPS
++            appendHelp(sb, "stratum_tps", "gauge", "Server TPS by averaging period");
++            appendMetric(sb, "stratum_tps", "{period=\"1m\"}",  tps[0]);
++            appendMetric(sb, "stratum_tps", "{period=\"5m\"}",  tps[1]);
++            appendMetric(sb, "stratum_tps", "{period=\"15m\"}", tps[2]);
++
++            // MSPT
++            appendHelp(sb, "stratum_mspt", "gauge", "Mean milliseconds per server tick");
++            appendMetric(sb, "stratum_mspt", "", mspt);
++
++            // Players
++            appendHelp(sb, "stratum_players_online", "gauge", "Number of online players");
++            appendMetric(sb, "stratum_players_online", "", online);
++            appendHelp(sb, "stratum_players_max", "gauge", "Maximum player slots");
++            appendMetric(sb, "stratum_players_max", "", maxPlrs);
++
++            // Chunks
++            appendHelp(sb, "stratum_chunks_loaded", "gauge", "Total loaded chunks across all worlds");
++            appendMetric(sb, "stratum_chunks_loaded", "", chunks);
++
++            // RAM
++            appendHelp(sb, "stratum_ram_used_bytes", "gauge", "JVM heap used bytes");
++            appendMetric(sb, "stratum_ram_used_bytes", "", usedBytes);
++            appendHelp(sb, "stratum_ram_max_bytes", "gauge", "JVM max heap bytes");
++            appendMetric(sb, "stratum_ram_max_bytes", "", maxBytes);
++
++            return sb.toString();
++        }
++
++        private static void appendHelp(StringBuilder sb, String name, String type, String help) {
++            sb.append("# HELP ").append(name).append(' ').append(help).append('\n');
++            sb.append("# TYPE ").append(name).append(' ').append(type).append('\n');
++        }
++
++        private static void appendMetric(StringBuilder sb, String name, String labels, double value) {
++            sb.append(name).append(labels).append(' ').append(value).append('\n');
++        }
++
++        private static void appendMetric(StringBuilder sb, String name, String labels, long value) {
++            sb.append(name).append(labels).append(' ').append(value).append('\n');
++        }
++
++        private static void appendMetric(StringBuilder sb, String name, String labels, int value) {
++            sb.append(name).append(labels).append(' ').append(value).append('\n');
++        }
++
++        private static double[] safeTps() {
++            try {
++                final double[] tps = Bukkit.getServer().getTPS();
++                return new double[]{
++                        tps.length > 0 ? tps[0] : 20.0,
++                        tps.length > 1 ? tps[1] : 20.0,
++                        tps.length > 2 ? tps[2] : 20.0
++                };
++            } catch (Exception e) {
++                return new double[]{20.0, 20.0, 20.0};
++            }
++        }
++
++        private static int countChunks() {
++            int total = 0;
++            for (final World world : Bukkit.getWorlds()) {
++                total += world.getLoadedChunks().length;
++            }
++            return total;
++        }
++    }
++}

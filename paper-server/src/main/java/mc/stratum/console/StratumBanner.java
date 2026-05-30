@@ -67,7 +67,7 @@ public final class StratumBanner {
                 + "Minecraft " + version
                 + "  |  Build #" + buildNumber
                 + "  |  git@" + commit);
-        logger.info(GOLD + "  https://stratum.mc" + RESET);
+        logger.info(GOLD + "  stratumserver.net" + RESET);
         logger.info("");
     }
 }

@@ -1,0 +1,464 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <build@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum-addons-system
+
+
+diff --git a/mc/stratum/addons/AddonLoader.java b/mc/stratum/addons/AddonLoader.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0bcf4b1cf06268418637465cc4e9b35862a0a71a
+--- /dev/null
++++ b/mc/stratum/addons/AddonLoader.java
+@@ -0,0 +1,309 @@
++package mc.stratum.addons;
++
++import mc.stratum.audit.AuditLog;
++import mc.stratum.tweaks.TweakSignatureVerifier;
++
++import java.io.File;
++import java.io.IOException;
++import java.io.InputStream;
++import java.net.URL;
++import java.net.URLClassLoader;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.StandardCopyOption;
++import java.security.PublicKey;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.jar.JarEntry;
++import java.util.jar.JarFile;
++import java.util.logging.Logger;
++
++/**
++ * Discovers, verifies, and manages Stratum addons in the {@code addons/} directory.
++ *
++ * <p>Each addon JAR must be accompanied by a {@code .sig} file (detached Ed25519 signature).
++ * Addons declaring {@code requiresTier2Key: true} in their {@code META-INF/addon.json}
++ * must pass verification against the {@code tier2Key} instead of the primary key.
++ */
++public final class AddonLoader {
++
++    private static final Logger LOGGER = Logger.getLogger("AddonLoader");
++
++    // Current Stratum version for compatibility checks
++    private static final int STRATUM_MAJOR_VERSION = 1;
++    private static final int STRATUM_MINOR_VERSION = 0;
++
++    private final List<AddonMeta>        installedAddons = new ArrayList<>();
++    private final List<AddonMeta>        enabledAddons   = new ArrayList<>();
++    private final Map<String, StratumAddon> liveInstances = new HashMap<>();
++    private final Map<String, ClassLoader>  classLoaders  = new HashMap<>();
++
++    // ── Public API ─────────────────────────────────────────────────────────────
++
++    /**
++     * Scans {@code addonsDir}, verifies each JAR, reads {@code META-INF/addon.json},
++     * checks compatibility, and loads enabled addons.
++     *
++     * @param addonsDir  directory to scan
++     * @param primaryKey primary Ed25519 public key (for standard addons)
++     * @param tier2Key   tier-2 Ed25519 public key (for premium addons)
++     */
++    public void loadAll(final File addonsDir,
++                        final PublicKey primaryKey,
++                        final PublicKey tier2Key) {
++        if (!addonsDir.exists()) {
++            addonsDir.mkdirs();
++            LOGGER.info("[Stratum] No addons/ directory found; created empty one.");
++            return;
++        }
++
++        final File[] jars = addonsDir.listFiles((dir, name) -> name.endsWith(".jar"));
++        if (jars == null || jars.length == 0) {
++            LOGGER.info("[Stratum] No addons found in " + addonsDir.getPath());
++            return;
++        }
++
++        for (final File jar : jars) {
++            loadSingle(jar, primaryKey, tier2Key);
++        }
++
++        // Check conflicts after all metadata is collected
++        resolveConflicts();
++    }
++
++    /**
++     * Enables an addon by id at runtime.
++     *
++     * @param id the addon id
++     * @throws IllegalArgumentException if no addon with that id is installed
++     * @throws IllegalStateException    if the addon is already enabled
++     */
++    public void enableAddon(final String id) {
++        final AddonMeta meta = findInstalled(id);
++        if (meta == null) throw new IllegalArgumentException("No addon installed with id: " + id);
++        if (enabledAddons.contains(meta)) throw new IllegalStateException("Addon already enabled: " + id);
++
++        enabledAddons.add(meta);
++
++        // Call onEnable() if the addon implements StratumAddon
++        final StratumAddon instance = liveInstances.get(id);
++        if (instance != null) {
++            try {
++                instance.onEnable();
++            } catch (Exception ex) {
++                LOGGER.severe("[Stratum] Exception in " + id + ".onEnable(): " + ex.getMessage());
++            }
++        }
++
++        AuditLog.getInstance().log("ADDON_ENABLED id=" + id + " version=" + meta.version());
++        LOGGER.info("[Stratum] Enabled addon: " + meta.name() + " v" + meta.version());
++    }
++
++    /**
++     * Disables an addon by id at runtime.
++     *
++     * @param id the addon id
++     * @throws IllegalArgumentException if no addon with that id is installed
++     * @throws IllegalStateException    if the addon is not currently enabled
++     */
++    public void disableAddon(final String id) {
++        final AddonMeta meta = findInstalled(id);
++        if (meta == null) throw new IllegalArgumentException("No addon installed with id: " + id);
++        if (!enabledAddons.contains(meta)) throw new IllegalStateException("Addon is not enabled: " + id);
++
++        final StratumAddon instance = liveInstances.get(id);
++        if (instance != null) {
++            try {
++                instance.onDisable();
++            } catch (Exception ex) {
++                LOGGER.severe("[Stratum] Exception in " + id + ".onDisable(): " + ex.getMessage());
++            }
++        }
++
++        enabledAddons.remove(meta);
++        AuditLog.getInstance().log("ADDON_DISABLED id=" + id);
++        LOGGER.info("[Stratum] Disabled addon: " + meta.name());
++    }
++
++    /** Returns an unmodifiable view of all installed addons (verified, loaded). */
++    public List<AddonMeta> getInstalledAddons() {
++        return Collections.unmodifiableList(installedAddons);
++    }
++
++    /** Returns an unmodifiable view of currently enabled addons. */
++    public List<AddonMeta> getEnabledAddons() {
++        return Collections.unmodifiableList(enabledAddons);
++    }
++
++    // ── Private ────────────────────────────────────────────────────────────────
++
++    private void loadSingle(final File jar, final PublicKey primaryKey, final PublicKey tier2Key) {
++        final String baseName = jar.getName().replace(".jar", "");
++        final File sigFile = new File(jar.getParent(), jar.getName() + ".sig");
++
++        // 1. Read metadata first (no signature check yet) to determine which key to use
++        AddonMeta meta;
++        try {
++            meta = readAddonMeta(jar);
++        } catch (Exception ex) {
++            LOGGER.warning("[Stratum] Could not read addon.json from " + jar.getName()
++                    + ": " + ex.getMessage() + " — skipping.");
++            return;
++        }
++
++        // 2. Select verification key
++        final PublicKey verifyKey = meta.requiresTier2Key() ? tier2Key : primaryKey;
++
++        // 3. Verify signature
++        if (!TweakSignatureVerifier.verify(jar, sigFile, verifyKey)) {
++            LOGGER.warning("[Stratum] REJECTED addon " + meta.name() + ": signature verification failed");
++            AuditLog.getInstance().log("ADDON_REJECTED id=" + meta.id() + " reason=signature_failed");
++            return;
++        }
++
++        // 4. Compatibility check
++        if (!isCompatible(meta)) {
++            LOGGER.warning("[Stratum] Addon " + meta.name() + " requires Stratum "
++                    + meta.minStratumVersion() + " but this is Stratum"
++                    + STRATUM_MAJOR_VERSION + "." + STRATUM_MINOR_VERSION + " — skipping.");
++            return;
++        }
++
++        // 5. If tagged as "plugin", install into plugins/ folder and skip normal loading
++        if (meta.tags() != null && meta.tags().contains("plugin")) {
++            installAsPlugin(jar, meta);
++            installedAddons.add(meta);
++            return;
++        }
++
++        // 6. Load classloader and register
++        try {
++            final URLClassLoader cl = new URLClassLoader(
++                    new URL[]{jar.toURI().toURL()},
++                    Thread.currentThread().getContextClassLoader()
++            );
++            classLoaders.put(meta.id(), cl);
++
++            // Attempt to instantiate main class if it implements StratumAddon
++            tryInstantiateAddon(meta, cl);
++
++            installedAddons.add(meta);
++            LOGGER.info("[Stratum] Loaded addon: " + meta.name() + " v" + meta.version()
++                    + " by " + meta.author());
++        } catch (Exception ex) {
++            LOGGER.severe("[Stratum] Failed to load addon JAR " + jar.getName()
++                    + ": " + ex.getMessage());
++        }
++    }
++
++    private static void installAsPlugin(final File jar, final AddonMeta meta) {
++        final File pluginsDir = new File("plugins");
++        pluginsDir.mkdirs();
++        final File dest = new File(pluginsDir, jar.getName());
++        try {
++            Files.copy(jar.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
++            AuditLog.getInstance().log("ADDON_PLUGIN_INSTALLED id=" + meta.id() + " dest=" + dest.getPath());
++            LOGGER.info("[Stratum] Installed addon as plugin: " + meta.name() + " → plugins/" + jar.getName());
++        } catch (IOException ex) {
++            LOGGER.severe("[Stratum] Failed to install addon as plugin: " + ex.getMessage());
++        }
++    }
++
++    private static AddonMeta readAddonMeta(final File jar) throws IOException {
++        try (JarFile jf = new JarFile(jar)) {
++            final JarEntry entry = jf.getJarEntry("META-INF/addon.json");
++            if (entry == null) throw new IOException("META-INF/addon.json not found in " + jar.getName());
++            try (InputStream in = jf.getInputStream(entry)) {
++                final String json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
++                return AddonMeta.fromJson(json);
++            }
++        }
++    }
++
++    private static boolean isCompatible(final AddonMeta meta) {
++        final String min = meta.minStratumVersion();
++        if (min == null) return true;
++
++        // Parse "Stratum1.3" → major=1, minor=3
++        try {
++            final String stripped = min.replace("Stratum", "");
++            final String[] parts  = stripped.split("\\.");
++            final int minMajor = Integer.parseInt(parts[0]);
++            final int minMinor = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
++            if (STRATUM_MAJOR_VERSION < minMajor) return false;
++            if (STRATUM_MAJOR_VERSION == minMajor && STRATUM_MINOR_VERSION < minMinor) return false;
++        } catch (NumberFormatException ignored) {
++            // Cannot parse — assume compatible
++        }
++
++        final String max = meta.maxStratumVersion();
++        if (max != null) {
++            try {
++                final String stripped = max.replace("Stratum", "");
++                final String[] parts  = stripped.split("\\.");
++                final int maxMajor = Integer.parseInt(parts[0]);
++                final int maxMinor = parts.length > 1 ? Integer.parseInt(parts[1]) : Integer.MAX_VALUE;
++                if (STRATUM_MAJOR_VERSION > maxMajor) return false;
++                if (STRATUM_MAJOR_VERSION == maxMajor && STRATUM_MINOR_VERSION > maxMinor) return false;
++            } catch (NumberFormatException ignored) {}
++        }
++
++        return true;
++    }
++
++    private void tryInstantiateAddon(final AddonMeta meta, final ClassLoader cl) {
++        // Addon JARs may declare their main class via META-INF/MANIFEST.MF Main-Class
++        // or a conventional class named after the id. We try a best-effort approach.
++        final String[] candidates = {
++                "mc.addon." + toCamelCase(meta.id()) + "Addon",
++                "addon." + toCamelCase(meta.id()),
++                meta.id()
++        };
++        for (final String className : candidates) {
++            try {
++                final Class<?> cls = Class.forName(className, true, cl);
++                if (StratumAddon.class.isAssignableFrom(cls)) {
++                    final StratumAddon addon = (StratumAddon) cls.getDeclaredConstructor().newInstance();
++                    liveInstances.put(meta.id(), addon);
++                    return;
++                }
++            } catch (ReflectiveOperationException ignored) {}
++        }
++    }
++
++    private void resolveConflicts() {
++        final List<AddonMeta> toRemove = new ArrayList<>();
++        for (final AddonMeta meta : installedAddons) {
++            for (final String conflict : meta.conflicts()) {
++                if (findInstalled(conflict) != null) {
++                    LOGGER.warning("[Stratum] Addon " + meta.id()
++                            + " conflicts with " + conflict + " — disabling " + meta.id());
++                    toRemove.add(meta);
++                    break;
++                }
++            }
++        }
++        installedAddons.removeAll(toRemove);
++    }
++
++    private AddonMeta findInstalled(final String id) {
++        return installedAddons.stream()
++                .filter(m -> m.id().equalsIgnoreCase(id))
++                .findFirst()
++                .orElse(null);
++    }
++
++    private static String toCamelCase(final String id) {
++        final StringBuilder sb = new StringBuilder();
++        for (final String part : id.split("[-_]")) {
++            if (!part.isEmpty()) {
++                sb.append(Character.toUpperCase(part.charAt(0)));
++                sb.append(part.substring(1).toLowerCase());
++            }
++        }
++        return sb.toString();
++    }
++}
+diff --git a/mc/stratum/addons/AddonMeta.java b/mc/stratum/addons/AddonMeta.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ef308e2a3c29070d45b8e3525fa9b17a3f2edade
+--- /dev/null
++++ b/mc/stratum/addons/AddonMeta.java
+@@ -0,0 +1,86 @@
++package mc.stratum.addons;
++
++import com.google.gson.Gson;
++import com.google.gson.annotations.SerializedName;
++
++import java.util.List;
++
++/**
++ * Metadata for a Stratum addon, read from {@code META-INF/addon.json} inside
++ * the addon's JAR file.
++ *
++ * <p>Example {@code addon.json}:
++ * <pre>{@code
++ * {
++ *   "id": "example-addon",
++ *   "name": "Example Addon",
++ *   "description": "Does something cool.",
++ *   "version": "1.0.0",
++ *   "author": "StratumDev",
++ *   "minStratumVersion": "Stratum1.0",
++ *   "maxStratumVersion": null,
++ *   "conflicts": [],
++ *   "requiresTier2Key": false
++ * }
++ * }</pre>
++ */
++public final class AddonMeta {
++
++    private static final Gson GSON = new Gson();
++
++    @SerializedName("id")
++    private String id;
++
++    @SerializedName("name")
++    private String name;
++
++    @SerializedName("description")
++    private String description;
++
++    @SerializedName("version")
++    private String version;
++
++    @SerializedName("author")
++    private String author;
++
++    @SerializedName("minStratumVersion")
++    private String minStratumVersion;
++
++    @SerializedName("maxStratumVersion")
++    private String maxStratumVersion;   // nullable
++
++    @SerializedName("conflicts")
++    private List<String> conflicts;
++
++    @SerializedName("requiresTier2Key")
++    private boolean requiresTier2Key;
++
++    @SerializedName("tags")
++    private List<String> tags;
++
++    // Private — use fromJson()
++    private AddonMeta() {}
++
++    /** Deserialises {@link AddonMeta} from raw JSON. */
++    public static AddonMeta fromJson(final String json) {
++        return GSON.fromJson(json, AddonMeta.class);
++    }
++
++    // ── Accessors ──────────────────────────────────────────────────────────────
++
++    public String id()                 { return id; }
++    public String name()               { return name; }
++    public String description()        { return description; }
++    public String version()            { return version; }
++    public String author()             { return author; }
++    public String minStratumVersion()  { return minStratumVersion; }
++    public String maxStratumVersion()  { return maxStratumVersion; }
++    public List<String> conflicts()    { return conflicts != null ? conflicts : List.of(); }
++    public boolean requiresTier2Key()  { return requiresTier2Key; }
++    public List<String> tags()         { return tags != null ? tags : List.of(); }
++
++    @Override
++    public String toString() {
++        return id + " v" + version + " by " + author;
++    }
++}
+diff --git a/mc/stratum/addons/StratumAddon.java b/mc/stratum/addons/StratumAddon.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..d11d80ccfde00b87bbe3dd4667e3e51779f9feff
+--- /dev/null
++++ b/mc/stratum/addons/StratumAddon.java
+@@ -0,0 +1,45 @@
++package mc.stratum.addons;
++
++/**
++ * Optional interface that addon JARs may implement on their main class.
++ *
++ * <p>Stratum's {@link AddonLoader} will invoke {@link #onEnable()} and
++ * {@link #onDisable()} when the addon is activated or deactivated at runtime.
++ *
++ * <p>Addons are not required to implement this interface; it is only needed
++ * when lifecycle callbacks are desired.
++ *
++ * <p>Example addon main class:
++ * <pre>{@code
++ * public class MyAddon implements StratumAddon {
++ *     private final AddonMeta meta;
++ *
++ *     public MyAddon(AddonMeta meta) { this.meta = meta; }
++ *
++ *     @Override public void onEnable()  { /* startup logic *\/ }
++ *     @Override public void onDisable() { /* cleanup logic *\/ }
++ *     @Override public AddonMeta getMeta() { return meta; }
++ * }
++ * }</pre>
++ */
++public interface StratumAddon {
++
++    /**
++     * Called when the addon is enabled (either on startup or via
++     * {@code /ST addons enable <id>}).
++     */
++    void onEnable();
++
++    /**
++     * Called when the addon is disabled (via {@code /ST addons disable <id>}
++     * or on server shutdown).
++     */
++    void onDisable();
++
++    /**
++     * Returns the addon's metadata, as read from {@code META-INF/addon.json}.
++     *
++     * @return the addon's {@link AddonMeta}
++     */
++    AddonMeta getMeta();
++}

@@ -1,0 +1,371 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <build@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum-console-theming
+
+
+diff --git a/mc/stratum/console/StratumBanner.java b/mc/stratum/console/StratumBanner.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f79f43d20652b3301080bbce1f620b56af8ea18
+--- /dev/null
++++ b/mc/stratum/console/StratumBanner.java
+@@ -0,0 +1,73 @@
++package mc.stratum.console;
++
++import io.papermc.paper.ServerBuildInfo;
++import org.apache.logging.log4j.Logger;
++
++/**
++ * Prints the Stratum MC ASCII banner to the server console on startup.
++ *
++ * <p>The banner uses ANSI escape codes to produce a blue→cyan gradient.
++ * Each row of ASCII art uses a slightly shifted hue so the text appears
++ * to shimmer across the blue/cyan spectrum.
++ */
++public final class StratumBanner {
++
++    // ── ANSI gradient colours (blue→cyan) ─────────────────────────────────────
++    private static final String[] GRADIENT = {
++        "[38;5;19m",   // deep blue
++        "[38;5;20m",
++        "[38;5;21m",
++        "[38;5;27m",
++        "[38;5;33m",
++        "[38;5;39m",
++        "[38;5;45m",
++        "[38;5;51m",   // bright cyan
++    };
++    private static final String RESET    = "[0m";
++    private static final String BOLD     = "[1m";
++    private static final String GOLD     = "[38;5;220m";
++
++    // ── ASCII art for "STRATUM MC" ─────────────────────────────────────────────
++    // Each inner array = one row across all letters
++    private static final String[] ART = {
++        " _____ _____ ____  ___  _____ _   _ __  __ ____ ",
++        "/  ___|_   _|  _ \\/ _ \\|_   _| | | |  \\/  / ___|",
++        "\\ `--.  | | | |_) / /_\\ \\ | | | | | | |\\/| | |   ",
++        " `--. \\ | | |    /|  _  | | | | |_| | |  | | |___",
++        "/\\__/ /_| |_| |\\ \\| | | | | | |___,_|_|  |_|\\____|",
++        "\\____/ \\___/_| \\_\\_| |_/ \\_/             MC       ",
++    };
++
++    private StratumBanner() {}
++
++    /**
++     * Logs the ASCII banner and version info via the provided Log4j2 logger.
++     *
++     * @param logger the logger to write to
++     */
++    public static void print(final Logger logger) {
++        final ServerBuildInfo build = ServerBuildInfo.buildInfo();
++        final String version     = build.minecraftVersionId();
++        final String buildNumber = build.buildNumber().isPresent()
++                ? String.valueOf(build.buildNumber().getAsInt()) : "DEV";
++        final String commit      = build.gitCommit().orElse("unknown");
++
++        // blank line before banner
++        logger.info("");
++
++        for (int i = 0; i < ART.length; i++) {
++            final String colour = GRADIENT[i % GRADIENT.length];
++            // Log4j will strip ANSI codes if the appender is not a terminal,
++            // but StratumLogLayout passes them through intact.
++            logger.info(colour + BOLD + ART[i] + RESET);
++        }
++
++        logger.info("");
++        logger.info(GOLD + BOLD + "  Stratum MC  " + RESET
++                + "Minecraft " + version
++                + "  |  Build #" + buildNumber
++                + "  |  git@" + commit);
++        logger.info(GOLD + "  stratumserver.net" + RESET);
++        logger.info("");
++    }
++}
+diff --git a/mc/stratum/console/StratumLogLayout.java b/mc/stratum/console/StratumLogLayout.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..630bc53ea6231d4b96a3a91f352e0794ed60cabb
+--- /dev/null
++++ b/mc/stratum/console/StratumLogLayout.java
+@@ -0,0 +1,136 @@
++package mc.stratum.console;
++
++import mc.stratum.StratumConfig;
++import org.apache.logging.log4j.Level;
++import org.apache.logging.log4j.core.LogEvent;
++import org.apache.logging.log4j.core.config.plugins.Plugin;
++import org.apache.logging.log4j.core.config.plugins.PluginFactory;
++import org.apache.logging.log4j.core.layout.AbstractStringLayout;
++
++import java.nio.charset.StandardCharsets;
++import java.time.Instant;
++import java.time.ZoneId;
++import java.time.format.DateTimeFormatter;
++
++/**
++ * Log4j2 layout that applies ANSI colour coding to console output.
++ *
++ * <p>Colour scheme:
++ * <ul>
++ *   <li>INFO  → bold white</li>
++ *   <li>WARN  → yellow</li>
++ *   <li>ERROR → bold red</li>
++ *   <li>DEBUG → dim cyan</li>
++ * </ul>
++ */
++@Plugin(name = "StratumLogLayout", category = "Core", elementType = "layout", printObject = true)
++public final class StratumLogLayout extends AbstractStringLayout {
++
++    // ── ANSI codes ─────────────────────────────────────────────────────────────
++    private static final String RESET      = "[0m";
++    private static final String BOLD_WHITE = "[1;37m";
++    private static final String YELLOW     = "[33m";
++    private static final String BOLD_RED   = "[1;31m";
++    private static final String DIM_CYAN   = "[2;36m";
++    private static final String GREY       = "[90m";
++
++    private static final DateTimeFormatter TIME_FMT =
++            DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
++
++    /**
++     * Whether console theming is active.
++     * This is read from {@link StratumConfig#consoleThemingEnabled} at each log event
++     * so that config reloads take effect immediately.
++     */
++    public static boolean enabled = true;
++
++    // ── Constructor ────────────────────────────────────────────────────────────
++
++    private StratumLogLayout() {
++        super(StandardCharsets.UTF_8);
++    }
++
++    @PluginFactory
++    public static StratumLogLayout createLayout() {
++        return new StratumLogLayout();
++    }
++
++    // ── Layout implementation ──────────────────────────────────────────────────
++
++    @Override
++    public String toSerializable(final LogEvent event) {
++        // Sync enabled flag from config (supports live reload)
++        enabled = StratumConfig.consoleThemingEnabled;
++
++        final String time    = TIME_FMT.format(Instant.ofEpochMilli(event.getTimeMillis()));
++        final String thread  = event.getThreadName();
++        final Level  level   = event.getLevel();
++        final String module  = deriveModule(event.getLoggerName());
++        final String message = event.getMessage().getFormattedMessage();
++
++        if (!enabled) {
++            // Plain format — no ANSI codes
++            return plainFormat(time, thread, level, module, message, event);
++        }
++
++        return ansiFormat(time, thread, level, module, message, event);
++    }
++
++    // ── Private helpers ────────────────────────────────────────────────────────
++
++    private String plainFormat(String time, String thread, Level level, String module,
++                               String message, LogEvent event) {
++        StringBuilder sb = new StringBuilder(128);
++        sb.append('[').append(time).append("] ");
++        sb.append('[').append(thread).append('/').append(level.name()).append("] ");
++        sb.append('[').append(module).append("]: ");
++        sb.append(message);
++        appendThrowable(sb, event);
++        sb.append(System.lineSeparator());
++        return sb.toString();
++    }
++
++    private String ansiFormat(String time, String thread, Level level, String module,
++                              String message, LogEvent event) {
++        final String colour = levelColour(level);
++        final String levelName = level.name();
++
++        StringBuilder sb = new StringBuilder(160);
++        // timestamp in grey
++        sb.append(GREY).append('[').append(time).append(']').append(RESET).append(' ');
++        // thread/level bracket in level colour
++        sb.append(colour).append('[').append(thread).append('/').append(levelName).append(']').append(RESET).append(' ');
++        // module in grey
++        sb.append(GREY).append('[').append(module).append("]: ").append(RESET);
++        // message in level colour
++        sb.append(colour).append(message).append(RESET);
++        appendThrowable(sb, event);
++        sb.append(System.lineSeparator());
++        return sb.toString();
++    }
++
++    private static String levelColour(Level level) {
++        if (level == Level.ERROR || level == Level.FATAL) return BOLD_RED;
++        if (level == Level.WARN)  return YELLOW;
++        if (level == Level.DEBUG || level == Level.TRACE) return DIM_CYAN;
++        return BOLD_WHITE; // INFO default
++    }
++
++    private static String deriveModule(String loggerName) {
++        if (loggerName == null || loggerName.isEmpty()) return "Server";
++        // Use simple class name as module label
++        int lastDot = loggerName.lastIndexOf('.');
++        return lastDot >= 0 ? loggerName.substring(lastDot + 1) : loggerName;
++    }
++
++    private static void appendThrowable(StringBuilder sb, LogEvent event) {
++        if (event.getThrown() != null) {
++            sb.append(System.lineSeparator());
++            final Throwable t = event.getThrown();
++            sb.append(t.getClass().getName()).append(": ").append(t.getMessage());
++            for (StackTraceElement ste : t.getStackTrace()) {
++                sb.append(System.lineSeparator()).append("\tat ").append(ste);
++            }
++        }
++    }
++}
+diff --git a/mc/stratum/console/StratumStatusLine.java b/mc/stratum/console/StratumStatusLine.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..fde4e039eb93bbf4acaee7d853ce1ae72fd0a66b
+--- /dev/null
++++ b/mc/stratum/console/StratumStatusLine.java
+@@ -0,0 +1,138 @@
++package mc.stratum.console;
++
++import mc.stratum.StratumConfig;
++import org.bukkit.Bukkit;
++import org.jline.terminal.Terminal;
++import org.jline.utils.AttributedString;
++import org.jline.utils.AttributedStyle;
++
++import java.io.PrintWriter;
++import java.util.concurrent.Executors;
++import java.util.concurrent.ScheduledExecutorService;
++import java.util.concurrent.ScheduledFuture;
++import java.util.concurrent.TimeUnit;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.logging.Logger;
++
++/**
++ * Renders a live status bar at the bottom of the JLine terminal.
++ *
++ * <p>Format: {@code [Stratum] TPS: XX.XX | Players: X/Y | RAM: XXXmb/YYYmb | MSPT: XX.Xms}
++ *
++ * <p>Updates every 2 seconds. Stops cleanly on {@link #stop()}.
++ */
++public final class StratumStatusLine {
++
++    private static final Logger LOGGER = Logger.getLogger("StratumStatusLine");
++
++    private final Terminal terminal;
++    private final ScheduledExecutorService scheduler;
++    private ScheduledFuture<?> future;
++    private final AtomicBoolean running = new AtomicBoolean(false);
++
++    // ANSI style helpers via JLine AttributedStyle
++    private static final AttributedStyle STYLE_BRACKET = AttributedStyle.DEFAULT
++            .foreground(AttributedStyle.CYAN).bold();
++    private static final AttributedStyle STYLE_VALUE   = AttributedStyle.DEFAULT
++            .foreground(AttributedStyle.WHITE).bold();
++    private static final AttributedStyle STYLE_LABEL   = AttributedStyle.DEFAULT
++            .foreground(AttributedStyle.BRIGHT);
++
++    public StratumStatusLine(final Terminal terminal) {
++        this.terminal = terminal;
++        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
++            Thread t = new Thread(r, "stratum-status-line");
++            t.setDaemon(true);
++            return t;
++        });
++    }
++
++    /**
++     * Starts the status-line update loop (no-op if already running or disabled in config).
++     */
++    public void start() {
++        if (!StratumConfig.statusLineEnabled) {
++            LOGGER.fine("[Stratum] Status line disabled by config.");
++            return;
++        }
++        if (running.compareAndSet(false, true)) {
++            future = scheduler.scheduleAtFixedRate(this::render, 0L, 2L, TimeUnit.SECONDS);
++        }
++    }
++
++    /** Stops the update loop and clears the status line. */
++    public void stop() {
++        if (running.compareAndSet(true, false)) {
++            if (future != null) future.cancel(false);
++            clearLine();
++        }
++    }
++
++    // ── Private ────────────────────────────────────────────────────────────────
++
++    private void render() {
++        if (!StratumConfig.statusLineEnabled) {
++            stop();
++            return;
++        }
++
++        try {
++            final String status = buildStatusLine();
++            // Print the status at the bottom of the terminal without disturbing log output.
++            // JLine's terminal writer moves to the bottom row, prints, then resets position.
++            final PrintWriter writer = terminal.writer();
++            // Save cursor, move to last line, clear it, print status, restore cursor
++            writer.print("\033[s");             // save cursor
++            writer.print("\033[999;1H");        // move to bottom row
++            writer.print("\033[2K");            // clear line
++            writer.print(status);
++            writer.print("\033[u");             // restore cursor
++            writer.flush();
++        } catch (Exception ex) {
++            // Terminal may not support repositioning — silently suppress
++        }
++    }
++
++    private void clearLine() {
++        try {
++            final PrintWriter writer = terminal.writer();
++            writer.print("\033[s\033[999;1H\033[2K\033[u");
++            writer.flush();
++        } catch (Exception ignored) {}
++    }
++
++    private static String buildStatusLine() {
++        final Runtime rt = Runtime.getRuntime();
++        final long usedMb = (rt.totalMemory() - rt.freeMemory()) / 1_048_576L;
++        final long maxMb  = rt.maxMemory() / 1_048_576L;
++
++        final int onlinePlayers = Bukkit.getOnlinePlayers().size();
++        final int maxPlayers    = Bukkit.getMaxPlayers();
++
++        final double tps  = getTps1m();
++        final double mspt = getMspt();
++
++        return String.format(
++                "[Stratum] TPS: %.2f | Players: %d/%d | RAM: %dmb/%dmb | MSPT: %.1fms",
++                tps, onlinePlayers, maxPlayers, usedMb, maxMb, mspt
++        );
++    }
++
++    private static double getTps1m() {
++        try {
++            double[] tps = Bukkit.getServer().getTPS();
++            return tps.length > 0 ? tps[0] : 20.0;
++        } catch (Exception e) {
++            return 20.0;
++        }
++    }
++
++    private static double getMspt() {
++        try {
++            // Paper API: getAverageTickTime() returns milliseconds per tick
++            return Bukkit.getServer().getAverageTickTime();
++        } catch (Exception e) {
++            return 0.0;
++        }
++    }
++}

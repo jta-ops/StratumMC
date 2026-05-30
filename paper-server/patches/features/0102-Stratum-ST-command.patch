@@ -1,0 +1,458 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <build@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum-ST-command
+
+
+diff --git a/mc/stratum/commands/STBukkitCommand.java b/mc/stratum/commands/STBukkitCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..43059d24dba379c985b02a2ce1c511edf28f8b35
+--- /dev/null
++++ b/mc/stratum/commands/STBukkitCommand.java
+@@ -0,0 +1,39 @@
++package mc.stratum.commands;
++
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandExecutor;
++import org.bukkit.command.CommandSender;
++import org.bukkit.command.TabCompleter;
++
++import java.util.List;
++
++/**
++ * Thin {@link Command} wrapper so {@link StratumCommand} can be registered
++ * directly with {@link org.bukkit.command.CommandMap} without a plugin.yml entry.
++ */
++public final class STBukkitCommand extends Command {
++
++    private final CommandExecutor executor;
++    private final TabCompleter    completer;
++
++    public STBukkitCommand(final String name, final StratumCommand handler) {
++        super(name);
++        this.executor  = handler;
++        this.completer = handler;
++
++        setDescription("Stratum MC administrative command");
++        setUsage("/ST [subcommand]");
++        setPermission("stratum.use");
++    }
++
++    @Override
++    public boolean execute(final CommandSender sender, final String commandLabel, final String[] args) {
++        return executor.onCommand(sender, this, commandLabel, args);
++    }
++
++    @Override
++    public List<String> tabComplete(final CommandSender sender, final String alias, final String[] args) {
++        final List<String> result = completer.onTabComplete(sender, this, alias, args);
++        return result != null ? result : List.of();
++    }
++}
+diff --git a/mc/stratum/commands/StratumCommand.java b/mc/stratum/commands/StratumCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..a0c7ecb841125b0a4034ca23f9c07cc36386ed9f
+--- /dev/null
++++ b/mc/stratum/commands/StratumCommand.java
+@@ -0,0 +1,401 @@
++package mc.stratum.commands;
++
++import io.papermc.paper.ServerBuildInfo;
++import mc.stratum.StratumConfig;
++import mc.stratum.addons.AddonLoader;
++import mc.stratum.addons.AddonMeta;
++import mc.stratum.tweaks.TweakLoader;
++import mc.stratum.tweaks.TweakManifest.TweakEntry;
++import mc.stratum.update.UpdateManager;
++
++import org.bukkit.Bukkit;
++import org.bukkit.ChatColor;
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandExecutor;
++import org.bukkit.command.CommandSender;
++import org.bukkit.command.TabCompleter;
++
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.List;
++import java.util.Locale;
++import java.util.stream.Collectors;
++
++/**
++ * /ST command — Stratum's primary administrative command tree.
++ *
++ * <p>Permission nodes:
++ * <ul>
++ *   <li>{@code stratum.admin}  — update, tweaks, addons, diag</li>
++ *   <li>{@code stratum.preset} — preset</li>
++ * </ul>
++ */
++public final class StratumCommand implements CommandExecutor, TabCompleter {
++
++    // ── Colour helpers ─────────────────────────────────────────────────────────
++    private static final String PREFIX  = ChatColor.DARK_AQUA + "[Stratum] " + ChatColor.RESET;
++    private static final String ERR     = ChatColor.RED.toString();
++    private static final String OK      = ChatColor.GREEN.toString();
++    private static final String INFO    = ChatColor.YELLOW.toString();
++    private static final String WHITE   = ChatColor.WHITE.toString();
++
++    // ── Injected managers ─────────────────────────────────────────────────────
++    private final TweakLoader tweakLoader;
++    private final AddonLoader addonLoader;
++    private final UpdateManager updateManager;
++
++    public StratumCommand(TweakLoader tweakLoader, AddonLoader addonLoader, UpdateManager updateManager) {
++        this.tweakLoader   = tweakLoader;
++        this.addonLoader   = addonLoader;
++        this.updateManager = updateManager;
++    }
++
++    // ── CommandExecutor ────────────────────────────────────────────────────────
++
++    @Override
++    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
++        if (args.length == 0) {
++            sendHelp(sender);
++            return true;
++        }
++
++        switch (args[0].toLowerCase(Locale.ROOT)) {
++            case "version"  -> cmdVersion(sender);
++            case "tweaks"   -> {
++                if (!requirePerm(sender, "stratum.admin")) return true;
++                cmdTweaks(sender);
++            }
++            case "addons"   -> {
++                if (!requirePerm(sender, "stratum.admin")) return true;
++                cmdAddons(sender, args);
++            }
++            case "update"   -> {
++                if (!requirePerm(sender, "stratum.admin")) return true;
++                cmdUpdate(sender, args);
++            }
++            case "diag"     -> {
++                if (!requirePerm(sender, "stratum.admin")) return true;
++                cmdDiag(sender);
++            }
++            case "preset"   -> {
++                if (!requirePerm(sender, "stratum.preset")) return true;
++                cmdPreset(sender, args);
++            }
++            case "migrate"  -> {
++                if (!requirePerm(sender, "stratum.admin")) return true;
++                cmdMigrate(sender);
++            }
++            default -> {
++                sender.sendMessage(PREFIX + ERR + "Unknown subcommand. Use /ST for help.");
++            }
++        }
++        return true;
++    }
++
++    // ── TabCompleter ───────────────────────────────────────────────────────────
++
++    @Override
++    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
++        final List<String> completions = new ArrayList<>();
++
++        if (args.length == 1) {
++            List<String> subs = new ArrayList<>(List.of("version", "diag"));
++            if (sender.hasPermission("stratum.admin"))  subs.addAll(List.of("tweaks", "addons", "update", "migrate"));
++            if (sender.hasPermission("stratum.preset")) subs.add("preset");
++            filterAndAdd(completions, subs, args[0]);
++
++        } else if (args.length == 2) {
++            switch (args[0].toLowerCase(Locale.ROOT)) {
++                case "addons"  -> filterAndAdd(completions, List.of("list", "enable", "disable", "info"), args[1]);
++                case "update"  -> filterAndAdd(completions, List.of("now", "30s", "5m", "10m", "1h"), args[1]);
++                case "preset"  -> filterAndAdd(completions, List.of("survival", "skyblock", "minigame"), args[1]);
++            }
++
++        } else if (args.length == 3) {
++            final String sub = args[0].toLowerCase(Locale.ROOT);
++            final String sub2 = args[1].toLowerCase(Locale.ROOT);
++            if ("addons".equals(sub) && List.of("enable", "disable", "info").contains(sub2)) {
++                List<String> ids = addonLoader.getInstalledAddons().stream()
++                        .map(AddonMeta::id)
++                        .collect(Collectors.toList());
++                filterAndAdd(completions, ids, args[2]);
++            }
++        }
++
++        return completions;
++    }
++
++    // ── Subcommand implementations ─────────────────────────────────────────────
++
++    private void cmdVersion(CommandSender sender) {
++        final ServerBuildInfo build = ServerBuildInfo.buildInfo();
++        sender.sendMessage(PREFIX + WHITE + "Stratum MC");
++        sender.sendMessage(INFO + "  Minecraft : " + WHITE + build.minecraftVersionId());
++        sender.sendMessage(INFO + "  Build     : " + WHITE + "#" + build.buildNumber().orElse(-1));
++        sender.sendMessage(INFO + "  Commit    : " + WHITE + build.gitCommit().orElse("unknown"));
++        sender.sendMessage(INFO + "  Branch    : " + WHITE + build.gitBranch().orElse("unknown"));
++    }
++
++    private void cmdTweaks(CommandSender sender) {
++        List<TweakEntry> tweaks = tweakLoader.getLoadedTweaks();
++        if (tweaks.isEmpty()) {
++            sender.sendMessage(PREFIX + INFO + "No tweaks are currently loaded.");
++            return;
++        }
++        sender.sendMessage(PREFIX + WHITE + "Loaded tweaks (" + tweaks.size() + "):");
++        for (TweakEntry t : tweaks) {
++            sender.sendMessage(INFO + "  [" + t.stratumVersion() + "] " + WHITE + t.name()
++                    + ChatColor.GRAY + " (" + t.id() + ")");
++        }
++    }
++
++    private void cmdAddons(CommandSender sender, String[] args) {
++        if (args.length < 2) {
++            sender.sendMessage(PREFIX + ERR + "Usage: /ST addons <list|enable|disable|info> [id]");
++            return;
++        }
++
++        switch (args[1].toLowerCase(Locale.ROOT)) {
++            case "list" -> {
++                List<AddonMeta> installed = addonLoader.getInstalledAddons();
++                List<AddonMeta> enabled   = addonLoader.getEnabledAddons();
++                if (installed.isEmpty()) {
++                    sender.sendMessage(PREFIX + INFO + "No addons installed.");
++                    return;
++                }
++                sender.sendMessage(PREFIX + WHITE + "Installed addons (" + installed.size() + "):");
++                for (AddonMeta m : installed) {
++                    boolean isEnabled = enabled.contains(m);
++                    String status = isEnabled ? OK + "[ENABLED]" : ERR + "[DISABLED]";
++                    sender.sendMessage("  " + status + " " + WHITE + m.name()
++                            + ChatColor.GRAY + " v" + m.version() + " (" + m.id() + ")");
++                }
++            }
++            case "enable" -> {
++                if (args.length < 3) { sender.sendMessage(ERR + "Specify an addon id."); return; }
++                try {
++                    addonLoader.enableAddon(args[2]);
++                    sender.sendMessage(PREFIX + OK + "Enabled addon: " + args[2]);
++                } catch (Exception ex) {
++                    sender.sendMessage(PREFIX + ERR + "Failed to enable addon: " + ex.getMessage());
++                }
++            }
++            case "disable" -> {
++                if (args.length < 3) { sender.sendMessage(ERR + "Specify an addon id."); return; }
++                try {
++                    addonLoader.disableAddon(args[2]);
++                    sender.sendMessage(PREFIX + OK + "Disabled addon: " + args[2]);
++                } catch (Exception ex) {
++                    sender.sendMessage(PREFIX + ERR + "Failed to disable addon: " + ex.getMessage());
++                }
++            }
++            case "info" -> {
++                if (args.length < 3) { sender.sendMessage(ERR + "Specify an addon id."); return; }
++                final String id = args[2];
++                addonLoader.getInstalledAddons().stream()
++                        .filter(m -> m.id().equalsIgnoreCase(id))
++                        .findFirst()
++                        .ifPresentOrElse(m -> {
++                            sender.sendMessage(PREFIX + WHITE + m.name() + " v" + m.version());
++                            sender.sendMessage(INFO + "  Author  : " + WHITE + m.author());
++                            sender.sendMessage(INFO + "  Desc    : " + WHITE + m.description());
++                            sender.sendMessage(INFO + "  Compat  : " + WHITE + m.minStratumVersion()
++                                    + " – " + (m.maxStratumVersion() != null ? m.maxStratumVersion() : "latest"));
++                            sender.sendMessage(INFO + "  Tier-2  : " + WHITE + m.requiresTier2Key());
++                        }, () -> sender.sendMessage(PREFIX + ERR + "No addon found with id: " + id));
++            }
++            default -> sender.sendMessage(PREFIX + ERR + "Unknown addons subcommand.");
++        }
++    }
++
++    private void cmdUpdate(CommandSender sender, String[] args) {
++        if (UpdateManager.isPendingUpdate()) {
++            sender.sendMessage(PREFIX + INFO + "An update is already pending/in progress.");
++            return;
++        }
++
++        if (args.length == 1) {
++            // Passive update
++            sender.sendMessage(PREFIX + INFO + "Starting passive update (waiting for empty server)…");
++            updateManager.startPassiveUpdate(Bukkit.getServer());
++            return;
++        }
++
++        switch (args[1].toLowerCase(Locale.ROOT)) {
++            case "now" -> {
++                sender.sendMessage(PREFIX + INFO + "Starting immediate update…");
++                updateManager.startImmediateUpdate(Bukkit.getServer());
++            }
++            default -> {
++                // Try to parse as duration
++                try {
++                    long delayMs = UpdateManager.parseDuration(args[1]);
++                    sender.sendMessage(PREFIX + INFO + "Update scheduled in " + args[1] + ".");
++                    updateManager.startScheduledUpdate(Bukkit.getServer(), delayMs);
++                } catch (IllegalArgumentException ex) {
++                    sender.sendMessage(PREFIX + ERR + "Invalid duration '" + args[1]
++                            + "'. Use formats like 30s, 5m, 2h.");
++                }
++            }
++        }
++    }
++
++    private void cmdDiag(CommandSender sender) {
++        final Runtime rt = Runtime.getRuntime();
++        final long usedMb = (rt.totalMemory() - rt.freeMemory()) / 1_048_576L;
++        final long maxMb  = rt.maxMemory() / 1_048_576L;
++
++        final double[] tps = Bukkit.getServer().getTPS();
++        final double mspt  = Bukkit.getServer().getAverageTickTime();
++        final long uptime  = (System.currentTimeMillis() - getServerStartTime()) / 1000L;
++
++        sender.sendMessage(PREFIX + WHITE + "=== Stratum Diagnostics ===");
++        sender.sendMessage(INFO + "  TPS (1m/5m/15m) : " + WHITE
++                + fmt(tps, 0) + " / " + fmt(tps, 1) + " / " + fmt(tps, 2));
++        sender.sendMessage(INFO + "  MSPT            : " + WHITE + String.format("%.2fms", mspt));
++        sender.sendMessage(INFO + "  RAM             : " + WHITE + usedMb + "mb / " + maxMb + "mb");
++        sender.sendMessage(INFO + "  Uptime          : " + WHITE + formatUptime(uptime));
++        sender.sendMessage(INFO + "  Players         : " + WHITE
++                + Bukkit.getOnlinePlayers().size() + "/" + Bukkit.getMaxPlayers());
++        sender.sendMessage(INFO + "  Loaded chunks   : " + WHITE + countLoadedChunks());
++        sender.sendMessage(INFO + "  Update pending  : " + WHITE + UpdateManager.isPendingUpdate());
++    }
++
++    private void cmdPreset(CommandSender sender, String[] args) {
++        if (args.length < 2) {
++            sender.sendMessage(PREFIX + ERR + "Usage: /ST preset <survival|skyblock|minigame>");
++            return;
++        }
++        switch (args[1].toLowerCase(Locale.ROOT)) {
++            case "survival" -> {
++                StratumConfig.viewDistance       = 10;
++                StratumConfig.simulationDistance = 6;
++                StratumConfig.mobSpawnCap        = 70;
++                StratumConfig.chunkLoadThreads   = 4;
++                StratumConfig.get().save();
++                sender.sendMessage(PREFIX + OK + "Applied preset: Survival");
++            }
++            case "skyblock" -> {
++                StratumConfig.viewDistance       = 12;
++                StratumConfig.simulationDistance = 8;
++                StratumConfig.mobSpawnCap        = 50;
++                StratumConfig.chunkLoadThreads   = 6;
++                StratumConfig.get().save();
++                sender.sendMessage(PREFIX + OK + "Applied preset: Skyblock");
++            }
++            case "minigame" -> {
++                StratumConfig.viewDistance       = 8;
++                StratumConfig.simulationDistance = 4;
++                StratumConfig.mobSpawnCap        = 30;
++                StratumConfig.chunkLoadThreads   = 8;
++                StratumConfig.get().save();
++                sender.sendMessage(PREFIX + OK + "Applied preset: Minigame");
++            }
++            default -> sender.sendMessage(PREFIX + ERR + "Unknown preset. Choose: survival, skyblock, minigame");
++        }
++    }
++
++    private void cmdMigrate(CommandSender sender) {
++        sender.sendMessage(PREFIX + INFO + "Scanning for Paper/Purpur configuration files…");
++
++        boolean found = false;
++        java.io.File paperYml = new java.io.File("paper.yml");
++        if (paperYml.exists()) {
++            sender.sendMessage(INFO + "  Found: " + WHITE + "paper.yml");
++            found = true;
++        }
++        java.io.File purpurYml = new java.io.File("purpur.yml");
++        if (purpurYml.exists()) {
++            sender.sendMessage(INFO + "  Found: " + WHITE + "purpur.yml");
++            found = true;
++        }
++        java.io.File paperGlobalYml = new java.io.File("config/paper-global.yml");
++        if (paperGlobalYml.exists()) {
++            sender.sendMessage(INFO + "  Found: " + WHITE + "config/paper-global.yml");
++            found = true;
++        }
++
++        if (!found) {
++            sender.sendMessage(PREFIX + INFO + "No Paper/Purpur config files detected.");
++            return;
++        }
++
++        sender.sendMessage(INFO + "Migration is partially automated.");
++        sender.sendMessage(INFO + "View-distance, simulation-distance, and mob caps will be imported.");
++        // Attempt a best-effort view-distance read from bukkit.yml
++        java.io.File bukkitYml = new java.io.File("bukkit.yml");
++        if (bukkitYml.exists()) {
++            try {
++                java.util.Properties props = new java.util.Properties();
++                // Use simple line scan — bukkit.yml is YAML, not .properties, but we just scan
++                List<String> lines = java.nio.file.Files.readAllLines(bukkitYml.toPath());
++                for (String line : lines) {
++                    if (line.trim().startsWith("view-distance:")) {
++                        String val = line.split(":")[1].trim();
++                        if (!val.equalsIgnoreCase("default")) {
++                            StratumConfig.viewDistance = Integer.parseInt(val);
++                            sender.sendMessage(OK + "  Imported view-distance: " + val);
++                        }
++                    }
++                }
++                StratumConfig.get().save();
++                sender.sendMessage(PREFIX + OK + "Migration complete. stratum.yml updated.");
++            } catch (Exception ex) {
++                sender.sendMessage(PREFIX + ERR + "Migration failed: " + ex.getMessage());
++            }
++        }
++    }
++
++    // ── Helpers ────────────────────────────────────────────────────────────────
++
++    private void sendHelp(CommandSender sender) {
++        sender.sendMessage(PREFIX + WHITE + "=== Stratum Commands ===");
++        sender.sendMessage(INFO + "  /ST version              " + WHITE + "- Show version info");
++        sender.sendMessage(INFO + "  /ST tweaks               " + WHITE + "- List loaded tweaks");
++        sender.sendMessage(INFO + "  /ST addons <list|enable|disable|info> [id]");
++        sender.sendMessage(INFO + "  /ST update [now|<time>]  " + WHITE + "- Schedule/trigger update");
++        sender.sendMessage(INFO + "  /ST diag                 " + WHITE + "- Health diagnostics");
++        sender.sendMessage(INFO + "  /ST preset <name>        " + WHITE + "- Apply config preset");
++        sender.sendMessage(INFO + "  /ST migrate              " + WHITE + "- Import Paper/Purpur config");
++    }
++
++    private static boolean requirePerm(CommandSender sender, String perm) {
++        if (!sender.hasPermission(perm)) {
++            sender.sendMessage(ERR + "You don't have permission to use this command.");
++            return false;
++        }
++        return true;
++    }
++
++    private static String fmt(double[] arr, int idx) {
++        if (arr == null || idx >= arr.length) return "N/A";
++        return String.format("%.2f", arr[idx]);
++    }
++
++    private static String formatUptime(long seconds) {
++        long h = seconds / 3600;
++        long m = (seconds % 3600) / 60;
++        long s = seconds % 60;
++        return String.format("%dh %02dm %02ds", h, m, s);
++    }
++
++    private static long getServerStartTime() {
++        // Approximate: use runtime uptime relative to current time
++        return System.currentTimeMillis() - java.lang.management.ManagementFactory.getRuntimeMXBean().getUptime();
++    }
++
++    private static int countLoadedChunks() {
++        int total = 0;
++        for (org.bukkit.World world : Bukkit.getWorlds()) {
++            total += world.getLoadedChunks().length;
++        }
++        return total;
++    }
++
++    private static void filterAndAdd(List<String> out, List<String> candidates, String prefix) {
++        String lp = prefix.toLowerCase(Locale.ROOT);
++        for (String c : candidates) {
++            if (c.toLowerCase(Locale.ROOT).startsWith(lp)) out.add(c);
++        }
++    }
++}

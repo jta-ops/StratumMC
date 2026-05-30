@@ -55,6 +55,9 @@ public final class AddonMeta {
     @SerializedName("requiresTier2Key")
     private boolean requiresTier2Key;
 
+    @SerializedName("tags")
+    private List<String> tags;
+
     // Private — use fromJson()
     private AddonMeta() {}
 
@@ -74,6 +77,7 @@ public final class AddonMeta {
     public String maxStratumVersion()  { return maxStratumVersion; }
     public List<String> conflicts()    { return conflicts != null ? conflicts : List.of(); }
     public boolean requiresTier2Key()  { return requiresTier2Key; }
+    public List<String> tags()         { return tags != null ? tags : List.of(); }
 
     @Override
     public String toString() {

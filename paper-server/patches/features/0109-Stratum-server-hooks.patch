@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <build@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum-server-hooks
+
+
+diff --git a/net/minecraft/server/dedicated/DedicatedServer.java b/net/minecraft/server/dedicated/DedicatedServer.java
+--- a/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -333,6 +333,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+ 
+         // CraftBukkit start
++        mc.stratum.StratumPluginInstaller.installOrUpdate(); // Stratum - auto-install/update plugin
+         this.server.loadPlugins();
+         this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.STARTUP);
+         // CraftBukkit end
+@@ -375,6 +376,7 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         LOGGER.info("Preparing level \"{}\"", this.getLevelIdName());
+         this.loadLevel(this.storageSource.getLevelId()); // CraftBukkit
++        mc.stratum.StratumServer.getInstance().init(this); // Stratum
+         long elapsed = Util.getNanos() - levelNanoTime;
+         String time = String.format(Locale.ROOT, "%.3fs", elapsed / 1.0E9);
+         LOGGER.info("Done preparing level \"{}\", ({})", this.getLevelIdName(), time); // Paper - Improve startup message, add total time
+diff --git a/net/minecraft/server/MinecraftServer.java b/net/minecraft/server/MinecraftServer.java
+--- a/net/minecraft/server/MinecraftServer.java
++++ b/net/minecraft/server/MinecraftServer.java
+@@ -946,6 +946,7 @@ public abstract class MinecraftServer extends ReentrantBlockableEventLoop<Runnab
+ 
+         LOGGER.info("Stopping server");
++        mc.stratum.StratumServer.getInstance().shutdown(); // Stratum
+         Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
+         // CraftBukkit start
+         if (this.server != null) {
