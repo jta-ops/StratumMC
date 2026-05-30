@@ -1,16 +1,12 @@
 package mc.stratum.bootstrap;
 
-import com.destroystokyo.paper.event.server.PaperServerListPingEvent;
-import com.destroystokyo.paper.event.player.PlayerPickupItemEvent;
+import org.bukkit.event.server.ServerListPingEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
-import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -25,7 +21,6 @@ import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
 import java.io.FileWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -43,8 +38,7 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
     private static final String SERVER_IP = "139.99.209.145";
     private static final int SERVER_PORT = 27022;
     private static final long HEARTBEAT_INTERVAL_TICKS = 5 * 60 * 20;
-    private static final Duration BLINDNESS_DURATION = Duration.ofSeconds(Integer.MAX_VALUE);
-    private static final Component SUSPENDED_MOTD = Component.text("⚠ License suspended").color(NamedTextColor.RED);
+    private static final String SUSPENDED_MOTD = "§c⚠ License suspended";
     private static final PotionEffect INFINITE_BLINDNESS = new PotionEffect(PotionEffectType.BLINDNESS, Integer.MAX_VALUE, 0, false, false, true);
 
     private String fingerprint;
@@ -246,9 +240,9 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
-    public void onServerPing(PaperServerListPingEvent event) {
+    public void onServerPing(ServerListPingEvent event) {
         if (licenseBlocked) {
-            event.motd(SUSPENDED_MOTD);
+            event.setMotd(SUSPENDED_MOTD);
         }
     }
 
