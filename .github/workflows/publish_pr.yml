@@ -2,16 +2,16 @@ name: Publish PR
 
 on:
   workflow_run:
-    workflows: [ "Build Paper" ]
+    workflows: [ "Build Stratum" ]
     types:
       - completed
 
 permissions:
-  packages: write # To upload the PR
-  actions: write # To get information about the uploading workflow run and to delete the run artifacts
-  contents: write # To download the `maven-publish` artifact, and to be able to create commit comments
-  issues: write # To be able to create PR comments
-  pull-requests: write # To be able to create PR comments
+  packages: write
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   publish:
@@ -30,7 +30,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.gen_repo_token.outputs.token }}
         with:
           publishing-token: ${{ github.token }}
-          uploader-workflow-name: Build Paper
-          artifacts-base-path: io/papermc/paper
+          uploader-workflow-name: Build Stratum
+          artifacts-base-path: mc/stratum
           base-maven-url: 'https://maven-prs.papermc.io'
-          self-name: 'papermc-pr-publishing[bot]'
+          self-name: 'stratum-pr-publishing[bot]'

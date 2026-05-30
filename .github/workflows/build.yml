@@ -1,10 +1,4 @@
-# Here lie dragons!
-#
-# This action either builds the server or
-# builds a paperclip jar to be updated in the body
-# of the PR relating to this action.
-
-name: Build Paper
+name: Build Stratum
 on:
   push:
   pull_request:
@@ -17,15 +11,11 @@ on:
 jobs:
   build:
     env:
-      ORG_GRADLE_PROJECT_paperBuildCacheEnabled: true
-      ORG_GRADLE_PROJECT_paperBuildCacheUsername: ${{ secrets.PAPER_BUILD_CACHE_USERNAME }}
-      ORG_GRADLE_PROJECT_paperBuildCachePassword: ${{ secrets.PAPER_BUILD_CACHE_PASSWORD }}
-      ORG_GRADLE_PROJECT_paperBuildCachePush: true
+      ORG_GRADLE_PROJECT_stratumBuildCacheEnabled: true
+      ORG_GRADLE_PROJECT_stratumBuildCacheUsername: ${{ secrets.STRATUM_BUILD_CACHE_USERNAME }}
+      ORG_GRADLE_PROJECT_stratumBuildCachePassword: ${{ secrets.STRATUM_BUILD_CACHE_PASSWORD }}
+      ORG_GRADLE_PROJECT_stratumBuildCachePush: true
 
-    # The goal of the build workflow is split into multiple requirements.
-    # 1. Run on pushes to same repo.
-    # 2. Run on PR open/reopen/syncs from repos that are not the same (PRs from the same repo are covered by 1)
-    # 3. Run on labeled PRs that have the publish-pr flag.
     if: >
       (
         (github.event_name == 'push')
@@ -40,7 +30,6 @@ jobs:
       - if: ${{ github.event_name == 'push' }}
         uses: actions/checkout@v4
         with:
-          # todo remove me again after the update
           ref: ${{ github.ref_name }}
           fetch-depth: 0
       - if: ${{ github.event_name == 'pull_request' }}
@@ -56,7 +45,6 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          # Allow cache writes on main and dev branches
           cache-read-only: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/dev/') }}
 
       - name: Configure Build
@@ -121,18 +109,16 @@ jobs:
         if: fromJSON(steps.determine.outputs.result).action == 'paperclip'
         uses: actions/upload-artifact@v4
         with:
-          name: paper-${{ fromJSON(steps.determine.outputs.result).pr }}
-          path: paper-server/build/libs/paper-paperclip-*.jar
+          name: stratum-${{ fromJSON(steps.determine.outputs.result).pr }}
+          path: stratum-server/build/libs/stratum-paperclip-*.jar
 
       - name: Publish Artifacts
         if: fromJSON(steps.determine.outputs.result).action == 'paperclip'
         uses: PaperMC/action-pr-publishing/upload@paper
         with:
-          # TODO fallback for failing javadoc
-          publishing-task: ":paper-api:publishAllPublicationsTo_githubPackages_PRsRepository publishDevBundlePublicationTo_githubPackages_PRsRepository -PpublishDevBundle"
+          publishing-task: ":stratum-api:publishAllPublicationsTo_githubPackages_PRsRepository publishDevBundlePublicationTo_githubPackages_PRsRepository -PpublishDevBundle"
   event_file:
     name: "Event File"
-    # Only run on PRs if the source branch is on someone else's repo
     if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
     runs-on: ubuntu-latest
     steps:
