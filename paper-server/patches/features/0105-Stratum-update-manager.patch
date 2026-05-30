@@ -1,0 +1,230 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <dev@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum update manager
+
+Handles passive, immediate, and scheduled update flows. Signals the
+stratum-launcher to swap JARs by writing UPDATE_SIGNAL to the working
+directory, then shuts down.
+
+diff --git a/mc/stratum/update/UpdateManager.java b/mc/stratum/update/UpdateManager.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
+--- /dev/null
++++ b/mc/stratum/update/UpdateManager.java
+@@ -0,0 +1,200 @@
++package mc.stratum.update;
++
++import mc.stratum.audit.AuditLog;
++import org.bukkit.Bukkit;
++import org.bukkit.command.CommandSender;
++import org.bukkit.scheduler.BukkitRunnable;
++
++import java.io.File;
++import java.io.IOException;
++import java.nio.file.Files;
++import java.util.concurrent.atomic.AtomicBoolean;
++import java.util.logging.Logger;
++
++public final class UpdateManager {
++
++    private static UpdateManager INSTANCE;
++    private static final Logger LOG = Logger.getLogger("Stratum/Update");
++    private static final String PREFIX = "§6[Stratum] §e";
++
++    private final AtomicBoolean pending = new AtomicBoolean(false);
++    public volatile String latestMajorVersion = null;
++
++    private UpdateManager() {}
++
++    public static UpdateManager getInstance() {
++        if (INSTANCE == null) INSTANCE = new UpdateManager();
++        return INSTANCE;
++    }
++
++    // ── Passive update — wait for empty server ────────────────────────────────
++
++    public void startPassiveUpdate(CommandSender initiator) {
++        if (!pending.compareAndSet(false, true)) {
++            initiator.sendMessage(PREFIX + "An update is already pending.");
++            return;
++        }
++        lockJoins();
++        setMotd("§cUpdating — please reconnect later");
++        initiator.sendMessage(PREFIX + "Passive update started. Waiting for server to empty...");
++        AuditLog.getInstance().log("UPDATE_PASSIVE_START initiator=" + initiator.getName());
++
++        new BukkitRunnable() {
++            @Override public void run() {
++                if (Bukkit.getOnlinePlayers().isEmpty()) {
++                    cancel();
++                    performSwap("passive");
++                }
++            }
++        }.runTaskTimer(getPlugin(), 100L, 100L); // check every 5s
++    }
++
++    // ── Immediate update — kick all, then swap ────────────────────────────────
++
++    public void startImmediateUpdate(CommandSender initiator) {
++        if (!pending.compareAndSet(false, true)) {
++            initiator.sendMessage(PREFIX + "An update is already pending.");
++            return;
++        }
++        lockJoins();
++        setMotd("§cUpdating — please reconnect in a moment");
++        Bukkit.getOnlinePlayers().forEach(p ->
++                p.kickPlayer("§6Server is updating.\n§ePlease reconnect in a moment."));
++        initiator.sendMessage(PREFIX + "Immediate update: all players kicked.");
++        AuditLog.getInstance().log("UPDATE_IMMEDIATE_START initiator=" + initiator.getName());
++        Bukkit.getScheduler().runTaskLater(getPlugin(), () -> performSwap("immediate"), 20L);
++    }
++
++    // ── Scheduled update — countdown, then swap ───────────────────────────────
++
++    public void startScheduledUpdate(CommandSender initiator, long delayMs) {
++        if (!pending.compareAndSet(false, true)) {
++            initiator.sendMessage(PREFIX + "An update is already pending.");
++            return;
++        }
++        lockJoins();
++        setMotd("§cUpdating soon — please reconnect later");
++        AuditLog.getInstance().log("UPDATE_SCHEDULED_START initiator=" + initiator.getName()
++                + " delayMs=" + delayMs);
++        final long[] warningMs = {delayMs, delayMs/2, 60_000, 30_000, 10_000, 5_000, 4_000, 3_000, 2_000, 1_000};
++        final long startMs = System.currentTimeMillis();
++        final long endMs   = startMs + delayMs;
+
++        new BukkitRunnable() {
++            int warnIdx = 0;
++            @Override public void run() {
++                long remaining = endMs - System.currentTimeMillis();
++                if (remaining <= 0) {
++                    cancel();
++                    Bukkit.getOnlinePlayers().forEach(p ->
++                            p.kickPlayer("§6Server is updating.\n§eReconnect in a moment."));
++                    Bukkit.getScheduler().runTaskLater(getPlugin(), () -> performSwap("scheduled"), 20L);
++                    return;
++                }
++                // Broadcast at each warning threshold
++                while (warnIdx < warningMs.length && warningMs[warnIdx] >= remaining) warnIdx++;
++                if (warnIdx < warningMs.length && Math.abs(remaining - warningMs[warnIdx]) < 1_000) {
++                    String msg = PREFIX + "Server updating in " + formatMs(remaining) + "!";
++                    Bukkit.broadcastMessage(msg);
++                    warnIdx++;
++                }
++                // Swap early if server is already empty
++                if (Bukkit.getOnlinePlayers().isEmpty()) {
++                    cancel();
++                    performSwap("scheduled-early");
++                }
++            }
++        }.runTaskTimer(getPlugin(), 20L, 20L);
++    }
++
++    // ── Swap ──────────────────────────────────────────────────────────────────
++
++    private void performSwap(String mode) {
++        LOG.info("[Stratum] Performing JAR swap (mode=" + mode + ")");
++        AuditLog.getInstance().log("UPDATE_SWAP_INITIATED mode=" + mode);
++        try {
++            File signal = new File("UPDATE_SIGNAL");
++            Files.writeString(signal.toPath(), mode + "\n" + System.currentTimeMillis());
++        } catch (IOException e) {
++            LOG.severe("Failed to write UPDATE_SIGNAL: " + e.getMessage());
++        }
++        Bukkit.getScheduler().runTask(getPlugin(), () -> Bukkit.shutdown());
++    }
++
++    // ── Helpers ───────────────────────────────────────────────────────────────
++
++    private void lockJoins() {
++        // Join locking is handled by VersionNotifier's PlayerLoginEvent listener
++        VersionNotifier.getInstance().lockJoins();
++    }
++
++    private void setMotd(String motd) {
++        try { Bukkit.setMotd(motd); } catch (Exception ignored) {}
++    }
++
++    private org.bukkit.plugin.Plugin getPlugin() {
++        return Bukkit.getPluginManager().getPlugins()[0]; // use first available plugin as scheduler owner
++    }
++
++    /**
++     * Parses duration strings like "30s", "5m", "2h" into milliseconds.
++     */
++    public static long parseDuration(String input) {
++        if (input == null || input.isBlank()) throw new IllegalArgumentException("Empty duration");
++        input = input.trim().toLowerCase();
++        try {
++            if (input.endsWith("s")) return Long.parseLong(input.substring(0, input.length()-1)) * 1_000L;
++            if (input.endsWith("m")) return Long.parseLong(input.substring(0, input.length()-1)) * 60_000L;
++            if (input.endsWith("h")) return Long.parseLong(input.substring(0, input.length()-1)) * 3_600_000L;
++            return Long.parseLong(input) * 60_000L; // bare number = minutes
++        } catch (NumberFormatException e) {
++            throw new IllegalArgumentException("Invalid duration: " + input);
++        }
++    }
++
++    private static String formatMs(long ms) {
++        if (ms >= 3_600_000) return (ms / 3_600_000) + "h";
++        if (ms >= 60_000)    return (ms / 60_000) + "m";
++        return (ms / 1_000) + "s";
++    }
++
++    public boolean isPending() { return pending.get(); }
++}
+diff --git a/mc/stratum/update/VersionNotifier.java b/mc/stratum/update/VersionNotifier.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
+--- /dev/null
++++ b/mc/stratum/update/VersionNotifier.java
+@@ -0,0 +1,70 @@
++package mc.stratum.update;
++
++import org.bukkit.event.EventHandler;
++import org.bukkit.event.Listener;
++import org.bukkit.event.player.PlayerLoginEvent;
++
++import java.util.concurrent.atomic.AtomicBoolean;
++
++public final class VersionNotifier implements Listener {
++
++    private static VersionNotifier INSTANCE;
++    private final AtomicBoolean joinsLocked = new AtomicBoolean(false);
++    private volatile boolean notifiedThisSession = false;
++    private volatile String cachedLatestVersion = null;
++
++    private VersionNotifier() {}
++
++    public static VersionNotifier getInstance() {
++        if (INSTANCE == null) INSTANCE = new VersionNotifier();
++        return INSTANCE;
++    }
++
++    @EventHandler
++    public void onLogin(PlayerLoginEvent event) {
++        // Block joins if an update is pending
++        if (joinsLocked.get()) {
++            event.disallow(PlayerLoginEvent.Result.KICK_OTHER,
++                    "§6Server is updating.\n§ePlease reconnect in a moment.");
++            return;
++        }
++        // Notify ops of available major version once per session
++        if (!notifiedThisSession && cachedLatestVersion != null && event.getPlayer().isOp()) {
++            event.getPlayer().sendMessage(
++                    "§6[Stratum] §eA new major version is available: §aStratum §f" +
++                    cachedLatestVersion + "§e. Use §a/ST update§e to schedule.");
++            notifiedThisSession = true;
++        }
++    }
++
++    public void lockJoins()   { joinsLocked.set(true); }
++    public void unlockJoins() { joinsLocked.set(false); }
++
++    public void setLatestVersion(String version) {
++        this.cachedLatestVersion = version;
++        this.notifiedThisSession = false;
++    }
++}

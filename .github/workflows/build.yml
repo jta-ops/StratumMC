@@ -1,129 +1,100 @@
 name: Build Stratum
+
 on:
   push:
+    branches: [ main, dev ]
   pull_request:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - labeled
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    env:
-      ORG_GRADLE_PROJECT_stratumBuildCacheEnabled: true
-      ORG_GRADLE_PROJECT_stratumBuildCacheUsername: ${{ secrets.STRATUM_BUILD_CACHE_USERNAME }}
-      ORG_GRADLE_PROJECT_stratumBuildCachePassword: ${{ secrets.STRATUM_BUILD_CACHE_PASSWORD }}
-      ORG_GRADLE_PROJECT_stratumBuildCachePush: true
-
-    if: >
-      (
-        (github.event_name == 'push')
-        || (github.event_name == 'pull_request' && github.repository != github.event.pull_request.head.repo.full_name && contains(fromJSON('["opened", "reopened", "synchronize"]'), github.event.action))
-        || (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'publish-pr')
-      )
-
+    name: Build (MC ${{ matrix.mc-version }})
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
+      matrix:
+        mc-version:
+          - "26.1.2"
+          - "1.21.5"
+          - "1.21.6"
+
     steps:
-      - if: ${{ github.event_name == 'push' }}
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
-      - if: ${{ github.event_name == 'pull_request' }}
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: JDK 25
+
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: 25
-          distribution: 'zulu'
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/dev/') }}
+      - name: Validate Gradle wrapper
+        uses: gradle/actions/wrapper-validation@v3
 
-      - name: Configure Build
-        uses: actions/github-script@v7
-        id: determine
+      - name: Apply patches
+        run: ./gradlew applyPatches
         env:
-          REF_NAME: "${{ github.ref_name }}"
-          REF_TYPE: "${{ github.ref_type }}"
-          EVENT: "${{ toJSON(github.event) }}"
-          EVENT_TYPE: "${{ github.event_name }}"
-        with:
-          script: |
-            const {owner, repo} = context.repo;
-            const event_name = `${process.env.EVENT_TYPE}`;
-            const event = JSON.parse(`${process.env.EVENT}`);
-            const ref_type = `${process.env.REF_TYPE}`;
-            const ref_name = `${process.env.REF_NAME}`;
-            const result = {
-              action: "build"
-            };
-
-            if (event_name === "push" && ref_type === "branch") {
-              const {data: pulls} = await github.rest.pulls.list({ owner, repo, head: `${owner}:${ref_name}`, state: "open" });
-              const pull = pulls.find((pr) => !!pr.labels.find((l) => l.name === "publish-pr"));
-              if (pull) {
-                result["pr"] = pull.number;
-                result["action"] = "paperclip";
-                core.notice(`This is a push action but to a branch with an open PR with the build paperclip label (${JSON.stringify(result)})`);
-                return result;
-              }
-            } else if (event_name === "pull_request" && event.pull_request.labels.find((l) => l.name === "publish-pr")) {
-              result["pr"] = event.pull_request.number;
-              result["action"] = "paperclip";
-              core.notice(`This is a pull request action with a build paperclip label (${JSON.stringify(result)})`);
-              return result;
-            }
-            core.notice("This will not build a paperclip jar");
-            return result;
-
-      - name: Apply Patches
-        run: |
-          git config --global user.email "no-reply@github.com"
-          git config --global user.name "GitHub Actions"
-          ./gradlew applyPatches --stacktrace
+          BUILD_NUMBER: ${{ github.run_number }}
 
       - name: Build
-        run: ./gradlew build --stacktrace
+        run: ./gradlew build createPaperclipJar
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_STARTED_AT: ${{ github.event.repository.updated_at }}
 
-      - name: Upload Test Results
-        if: always()
+      - name: Upload paperclip JAR
         uses: actions/upload-artifact@v4
         with:
-          name: Test Results
-          path: |
-            **/build/test-results/test/TEST-*.xml
+          name: stratum-${{ matrix.mc-version }}-paperclip
+          path: paper-server/build/libs/*-paperclip-*.jar
+          retention-days: 30
 
-      - name: Create Paperclip Jar
-        run: ./gradlew createPaperclipJar --stacktrace
-
-      - name: Upload Paperclip Jar
+      - name: Upload launcher JAR
         uses: actions/upload-artifact@v4
         with:
-          name: stratum-paperclip
-          path: |
-            paper-server/build/libs/*-paperclip-*.jar
-            stratum-server/build/libs/*-paperclip-*.jar
+          name: stratum-launcher
+          path: stratum-launcher/build/libs/stratum-launcher.jar
+          if-no-files-found: ignore
+          retention-days: 30
 
-      - name: Publish Artifacts
-        if: fromJSON(steps.determine.outputs.result).action == 'paperclip'
-        uses: PaperMC/action-pr-publishing/upload@paper
-        with:
-          publishing-task: ":stratum-api:publishAllPublicationsTo_githubPackages_PRsRepository publishDevBundlePublicationTo_githubPackages_PRsRepository -PpublishDevBundle"
-  event_file:
-    name: "Event File"
-    if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
+  release:
+    name: Release
     runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Upload
-        uses: actions/upload-artifact@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          name: Event File
-          path: ${{ github.event_path }}
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Build release artifacts
+        run: ./gradlew applyPatches build createPaperclipJar
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+
+      - name: Sign JAR (Ed25519)
+        run: |
+          if [ -f "$SIGN_KEY_PATH" ]; then
+            JAR=$(find paper-server/build/libs -name "*-paperclip-*.jar" | head -1)
+            openssl pkeyutl -sign -inkey "$SIGN_KEY_PATH" -rawin -in "$JAR" | base64 > "${JAR}.sig"
+            echo "Signed: $JAR"
+          else
+            echo "No signing key found — skipping signature"
+          fi
+        env:
+          SIGN_KEY_PATH: /tmp/stratum_private.pem
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            paper-server/build/libs/*-paperclip-*.jar
+            paper-server/build/libs/*-paperclip-*.jar.sig
+          generate_release_notes: true

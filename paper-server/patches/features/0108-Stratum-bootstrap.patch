@@ -1,0 +1,174 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <dev@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum bootstrap and startup branding
+
+Central StratumServer singleton initialised during server startup.
+Redesigns all user-visible output: startup banner, log format, and
+startup summary line. Nothing says "Paper" to the operator.
+
+diff --git a/mc/stratum/StratumServer.java b/mc/stratum/StratumServer.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
+--- /dev/null
++++ b/mc/stratum/StratumServer.java
+@@ -0,0 +1,200 @@
++package mc.stratum;
++
++import mc.stratum.addons.AddonLoader;
++import mc.stratum.audit.AuditLog;
++import mc.stratum.commands.StratumCommand;
++import mc.stratum.console.StratumBanner;
++import mc.stratum.console.StratumStatusLine;
++import mc.stratum.metrics.StratumMetricsServer;
++import mc.stratum.tweaks.TweakLoader;
++import mc.stratum.update.UpdateManager;
++import mc.stratum.update.VersionNotifier;
++import org.bukkit.Bukkit;
++import org.bukkit.command.PluginCommand;
++
++import java.io.File;
++import java.io.IOException;
++import java.io.InputStream;
++import java.security.KeyFactory;
++import java.security.PublicKey;
++import java.security.spec.X509EncodedKeySpec;
++import java.util.Base64;
++import java.util.logging.Logger;
++
++/**
++ * Central Stratum bootstrap singleton.
++ * Called from CraftServer#loadPlugins (injected via patch).
++ */
++public final class StratumServer {
++
++    private static StratumServer INSTANCE;
++    private static final Logger LOG = Logger.getLogger("Stratum");
++
++    private PublicKey primaryKey;
++    private PublicKey tier2Key;
++
++    private StratumServer() {}
++
++    public static StratumServer getInstance() {
++        if (INSTANCE == null) INSTANCE = new StratumServer();
++        return INSTANCE;
++    }
++
++    public void init() {
++        // 1. Load config
++        StratumConfig.load(new File("stratum.yml"));
++
++        // 2. Open audit log
++        AuditLog.getInstance().open(new File("logs"));
++        AuditLog.getInstance().log("STRATUM_STARTUP version=" + getBuildVersion());
++
++        // 3. Print startup banner
++        StratumBanner.print(LOG);
++
++        // 4. Load signing keys
++        primaryKey = loadPublicKey("stratum_public_key.pem");
++        tier2Key   = loadPublicKey("stratum_tier2_key.pem");
++        if (primaryKey == null) {
++            LOG.severe("[Stratum] PRIMARY SIGNING KEY NOT FOUND — tweaks and addons will not load.");
++        }
++
++        // 5. Load tweaks
++        TweakLoader tl = TweakLoader.getInstance();
++        if (primaryKey != null) tl.loadAll(new File("tweaks"), primaryKey);
++
++        // 6. Load addons
++        AddonLoader al = AddonLoader.getInstance();
++        if (primaryKey != null) al.loadAll(new File("addons"), primaryKey, tier2Key);
++
++        // 7. Startup summary
++        printStartupSummary(tl, al);
++
++        // 8. Status line
++        // (Started later once JLine terminal is available — see StratumStatusLine)
++
++        // 9. Metrics
++        StratumMetricsServer.getInstance().start();
++
++        // 10. Register /ST command
++        registerCommand();
++    }
++
++    private void printStartupSummary(TweakLoader tl, AddonLoader al) {
++        int tweaks   = tl.loadedCount();
++        int addons   = al.installedCount();
++        int rejected = tl.rejectedCount();
++
++        String RESET  = "\033[0m";
++        String GREEN  = "\033[32m";
++        String RED    = "\033[31m";
++        String YELLOW = "\033[33m";
++        String BOLD   = "\033[1m";
++
++        if (rejected == 0) {
++            LOG.info(BOLD + GREEN + "✔ " + tweaks + " tweak(s) + " + addons +
++                    " addon(s) loaded, all signature-verified" + RESET);
++        } else {
++            LOG.warning(YELLOW + "⚠ " + tweaks + " tweak(s) + " + addons +
++                    " addon(s) loaded — " + RED + rejected + " item(s) REJECTED" +
++                    " (signature failure)" + RESET);
++            tl.getRejected().forEach(r ->
++                    LOG.severe("  REJECTED: " + r));
++        }
++        AuditLog.getInstance().log("STARTUP_SUMMARY tweaks=" + tweaks
++                + " addons=" + addons + " rejected=" + rejected);
++    }
++
++    private void registerCommand() {
++        try {
++            // Dynamically register /ST into Bukkit's command map
++            org.bukkit.command.SimpleCommandMap cmdMap =
++                    (org.bukkit.command.SimpleCommandMap)
++                    ((org.bukkit.craftbukkit.CraftServer) Bukkit.getServer()).getCommandMap();
++            StratumCommand handler = new StratumCommand();
++            org.bukkit.command.defaults.BukkitCommand cmd =
++                    new org.bukkit.command.defaults.BukkitCommand("st") {
++                        @Override public boolean execute(org.bukkit.command.CommandSender s, String l, String[] a) {
++                            return handler.onCommand(s, this, l, a);
++                        }
++                        @Override public java.util.List<String> tabComplete(
++                                org.bukkit.command.CommandSender s, String a, String[] b) {
++                            java.util.List<String> r = handler.onTabComplete(s, this, a, b);
++                            return r != null ? r : java.util.Collections.emptyList();
++                        }
++                    };
++            cmd.setDescription("Stratum server management command");
++            cmd.setUsage("/ST <subcommand>");
++            cmd.setAliases(java.util.List.of("stratum"));
++            cmdMap.register("stratum", cmd);
++        } catch (Exception e) {
++            LOG.severe("Failed to register /ST command: " + e.getMessage());
++        }
++    }
++
++    private PublicKey loadPublicKey(String resourceName) {
++        try (InputStream is = StratumServer.class.getClassLoader().getResourceAsStream(resourceName)) {
++            if (is == null) return null;
++            String pem = new String(is.readAllBytes())
++                    .replace("-----BEGIN PUBLIC KEY-----", "")
++                    .replace("-----END PUBLIC KEY-----", "")
++                    .replaceAll("\\s", "");
++            byte[] der = Base64.getDecoder().decode(pem);
++            return KeyFactory.getInstance("Ed25519").generatePublic(new X509EncodedKeySpec(der));
++        } catch (Exception e) {
++            LOG.warning("Could not load key " + resourceName + ": " + e.getMessage());
++            return null;
++        }
++    }
++
++    private static String getBuildVersion() {
++        try {
++            io.papermc.paper.ServerBuildInfo b = io.papermc.paper.ServerBuildInfo.buildInfo();
++            return b.minecraftVersionId() + "-" +
++                    b.buildNumber().stream().mapToObj(Integer::toString).findFirst().orElse("DEV");
++        } catch (Exception e) { return "unknown"; }
++    }
++
++    public PublicKey getPrimaryKey() { return primaryKey; }
++    public PublicKey getTier2Key()   { return tier2Key; }
++}

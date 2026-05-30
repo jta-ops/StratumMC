@@ -1,0 +1,261 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Stratum MC <dev@stratum.mc>
+Date: Fri, 30 May 2026 00:00:00 +0000
+Subject: [PATCH] Stratum /ST command tree
+
+Adds the /ST root command with subcommands: version, tweaks, addons,
+update, diag, preset, and migrate.
+
+diff --git a/mc/stratum/commands/StratumCommand.java b/mc/stratum/commands/StratumCommand.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ffffffffffffffffffffffffffffffffffffffff
+--- /dev/null
++++ b/mc/stratum/commands/StratumCommand.java
+@@ -0,0 +1,280 @@
++package mc.stratum.commands;
++
++import mc.stratum.StratumConfig;
++import mc.stratum.addons.AddonLoader;
++import mc.stratum.tweaks.TweakLoader;
++import mc.stratum.update.UpdateManager;
++import org.bukkit.Bukkit;
++import org.bukkit.ChatColor;
++import org.bukkit.command.Command;
++import org.bukkit.command.CommandExecutor;
++import org.bukkit.command.CommandSender;
++import org.bukkit.command.TabCompleter;
++import org.bukkit.entity.Player;
++import org.jetbrains.annotations.NotNull;
++
++import java.util.ArrayList;
++import java.util.Arrays;
++import java.util.Collections;
++import java.util.List;
++
++public final class StratumCommand implements CommandExecutor, TabCompleter {
++
++    private static final String PREFIX = ChatColor.DARK_AQUA + "[Stratum] " + ChatColor.RESET;
++    private static final String NO_PERM = PREFIX + ChatColor.RED + "You don't have permission.";
++
++    @Override
++    public boolean onCommand(@NotNull CommandSender sender,
++                             @NotNull Command command,
++                             @NotNull String label,
++                             @NotNull String[] args) {
++        if (args.length == 0) {
++            sendHelp(sender);
++            return true;
++        }
++        switch (args[0].toLowerCase()) {
++            case "version" -> cmdVersion(sender);
++            case "tweaks"  -> cmdTweaks(sender);
++            case "addons"  -> cmdAddons(sender, args);
++            case "update"  -> cmdUpdate(sender, args);
++            case "diag"    -> cmdDiag(sender);
++            case "preset"  -> cmdPreset(sender, args);
++            case "migrate" -> cmdMigrate(sender);
++            default        -> sendHelp(sender);
++        }
++        return true;
++    }
++
++    // ── version ──────────────────────────────────────────────────────────────
++
++    private void cmdVersion(CommandSender sender) {
++        io.papermc.paper.ServerBuildInfo b = io.papermc.paper.ServerBuildInfo.buildInfo();
++        sender.sendMessage(PREFIX + ChatColor.GOLD + "Stratum MC");
++        sender.sendMessage(ChatColor.GRAY + "  Brand    : " + ChatColor.WHITE + b.brandName());
++        sender.sendMessage(ChatColor.GRAY + "  MC       : " + ChatColor.WHITE + b.minecraftVersionId());
++        sender.sendMessage(ChatColor.GRAY + "  Build    : " + ChatColor.WHITE +
++                b.buildNumber().stream().mapToObj(Integer::toString).findFirst().orElse("DEV"));
++        b.gitCommit().ifPresent(c ->
++                sender.sendMessage(ChatColor.GRAY + "  Commit   : " + ChatColor.WHITE + c));
++    }
++
++    // ── tweaks ────────────────────────────────────────────────────────────────
++
++    private void cmdTweaks(CommandSender sender) {
++        List<String> tweaks = TweakLoader.getInstance().getLoadedTweakNames();
++        if (tweaks.isEmpty()) {
++            sender.sendMessage(PREFIX + "No tweaks loaded.");
++            return;
++        }
++        sender.sendMessage(PREFIX + ChatColor.GOLD + tweaks.size() + " tweak(s) active:");
++        tweaks.forEach(t -> sender.sendMessage(ChatColor.GRAY + "  • " + ChatColor.WHITE + t));
++    }
++
++    // ── addons ────────────────────────────────────────────────────────────────
++
++    private void cmdAddons(CommandSender sender, String[] args) {
++        if (args.length < 2) { sendAddonsHelp(sender); return; }
++        switch (args[1].toLowerCase()) {
++            case "list" -> {
++                AddonLoader al = AddonLoader.getInstance();
++                List<String> installed = al.getInstalledAddonIds();
++                if (installed.isEmpty()) { sender.sendMessage(PREFIX + "No addons installed."); return; }
++                sender.sendMessage(PREFIX + ChatColor.GOLD + installed.size() + " addon(s):");
++                installed.forEach(id -> {
++                    boolean enabled = al.isEnabled(id);
++                    sender.sendMessage(ChatColor.GRAY + "  " +
++                            (enabled ? ChatColor.GREEN + "✔" : ChatColor.RED + "✘") +
++                            ChatColor.WHITE + " " + id);
++                });
++            }
++            case "enable" -> {
++                if (!sender.hasPermission("stratum.admin")) { sender.sendMessage(NO_PERM); return; }
++                if (args.length < 3) { sender.sendMessage(PREFIX + "Usage: /ST addons enable <id>"); return; }
++                AddonLoader.getInstance().enableAddon(args[2], sender);
++            }
++            case "disable" -> {
++                if (!sender.hasPermission("stratum.admin")) { sender.sendMessage(NO_PERM); return; }
++                if (args.length < 3) { sender.sendMessage(PREFIX + "Usage: /ST addons disable <id>"); return; }
++                AddonLoader.getInstance().disableAddon(args[2], sender);
++            }
++            case "info" -> {
++                if (args.length < 3) { sender.sendMessage(PREFIX + "Usage: /ST addons info <id>"); return; }
++                AddonLoader.getInstance().printInfo(args[2], sender);
++            }
++            default -> sendAddonsHelp(sender);
++        }
++    }
++
++    // ── update ────────────────────────────────────────────────────────────────
++
++    private void cmdUpdate(CommandSender sender, String[] args) {
++        if (!sender.hasPermission("stratum.admin")) { sender.sendMessage(NO_PERM); return; }
++        UpdateManager um = UpdateManager.getInstance();
++        if (args.length == 1) {
++            um.startPassiveUpdate(sender);
++        } else if (args[1].equalsIgnoreCase("now")) {
++            um.startImmediateUpdate(sender);
++        } else {
++            try {
++                long ms = UpdateManager.parseDuration(args[1]);
++                um.startScheduledUpdate(sender, ms);
++            } catch (IllegalArgumentException e) {
++                sender.sendMessage(PREFIX + ChatColor.RED + "Invalid duration. Use: 30s, 5m, 2h");
++            }
++        }
++    }
++
++    // ── diag ─────────────────────────────────────────────────────────────────
++
++    private void cmdDiag(CommandSender sender) {
++        if (!sender.hasPermission("stratum.admin")) { sender.sendMessage(NO_PERM); return; }
++        Runtime rt = Runtime.getRuntime();
++        long usedMb = (rt.totalMemory() - rt.freeMemory()) / 1_048_576L;
++        long maxMb  = rt.maxMemory() / 1_048_576L;
++        double[] tps = Bukkit.getServer().getTPS();
++        sender.sendMessage(PREFIX + ChatColor.GOLD + "Stratum Diagnostics");
++        sender.sendMessage(ChatColor.GRAY + "  TPS  (1m/5m/15m): " + ChatColor.WHITE +
++                String.format("%.2f / %.2f / %.2f",
++                        tps.length > 0 ? tps[0] : 0,
++                        tps.length > 1 ? tps[1] : 0,
++                        tps.length > 2 ? tps[2] : 0));
++        sender.sendMessage(ChatColor.GRAY + "  MSPT            : " + ChatColor.WHITE +
++                String.format("%.1fms", Bukkit.getServer().getAverageTickTime()));
++        sender.sendMessage(ChatColor.GRAY + "  RAM             : " + ChatColor.WHITE +
++                usedMb + "mb / " + maxMb + "mb");
++        sender.sendMessage(ChatColor.GRAY + "  Players         : " + ChatColor.WHITE +
++                Bukkit.getOnlinePlayers().size() + " / " + Bukkit.getMaxPlayers());
++        sender.sendMessage(ChatColor.GRAY + "  Loaded chunks   : " + ChatColor.WHITE +
++                Bukkit.getWorlds().stream().mapToInt(w -> w.getLoadedChunks().length).sum());
++        sender.sendMessage(ChatColor.GRAY + "  Tweaks          : " + ChatColor.WHITE +
++                TweakLoader.getInstance().getLoadedTweakNames().size());
++        sender.sendMessage(ChatColor.GRAY + "  Addons (enabled): " + ChatColor.WHITE +
++                AddonLoader.getInstance().getEnabledAddonIds().size());
++    }
++
++    // ── preset ────────────────────────────────────────────────────────────────
++
++    private void cmdPreset(CommandSender sender, String[] args) {
++        if (!sender.hasPermission("stratum.preset")) { sender.sendMessage(NO_PERM); return; }
++        if (args.length < 2) {
++            sender.sendMessage(PREFIX + "Usage: /ST preset <survival|skyblock|minigame>");
++            return;
++        }
++        switch (args[1].toLowerCase()) {
++            case "survival" -> {
++                StratumConfig.applyPreset("survival");
++                sender.sendMessage(PREFIX + ChatColor.GREEN + "Applied survival preset.");
++            }
++            case "skyblock" -> {
++                StratumConfig.applyPreset("skyblock");
++                sender.sendMessage(PREFIX + ChatColor.GREEN + "Applied skyblock preset.");
++            }
++            case "minigame" -> {
++                StratumConfig.applyPreset("minigame");
++                sender.sendMessage(PREFIX + ChatColor.GREEN + "Applied minigame preset.");
++            }
++            default -> sender.sendMessage(PREFIX + ChatColor.RED + "Unknown preset: " + args[1]);
++        }
++    }
++
++    // ── migrate ───────────────────────────────────────────────────────────────
++
++    private void cmdMigrate(CommandSender sender) {
++        if (!sender.hasPermission("stratum.admin")) { sender.sendMessage(NO_PERM); return; }
++        sender.sendMessage(PREFIX + "Scanning for existing Paper/Purpur configuration...");
++        java.io.File paperConfig = new java.io.File("paper.yml");
++        java.io.File purpurConfig = new java.io.File("purpur.yml");
++        java.io.File spigotConfig = new java.io.File("spigot.yml");
++        int found = 0;
++        if (paperConfig.exists())  { sender.sendMessage(ChatColor.GRAY + "  Found paper.yml");  found++; }
++        if (purpurConfig.exists()) { sender.sendMessage(ChatColor.GRAY + "  Found purpur.yml"); found++; }
++        if (spigotConfig.exists()) { sender.sendMessage(ChatColor.GRAY + "  Found spigot.yml"); found++; }
++        if (found == 0) {
++            sender.sendMessage(PREFIX + "No existing config files found.");
++            return;
++        }
++        sender.sendMessage(PREFIX + ChatColor.YELLOW + "Found " + found +
++                " config file(s). Stratum uses stratum.yml — existing Paper/Spigot" +
++                " settings are already inherited. Edit stratum.yml for Stratum-specific overrides.");
++    }
++
++    // ── helpers ───────────────────────────────────────────────────────────────
++
++    private void sendHelp(CommandSender sender) {
++        sender.sendMessage(PREFIX + ChatColor.GOLD + "Stratum commands:");
++        sender.sendMessage(ChatColor.GRAY + "  /ST version");
++        sender.sendMessage(ChatColor.GRAY + "  /ST tweaks");
++        sender.sendMessage(ChatColor.GRAY + "  /ST addons <list|enable|disable|info>");
++        sender.sendMessage(ChatColor.GRAY + "  /ST update [now|<time>]");
++        sender.sendMessage(ChatColor.GRAY + "  /ST diag");
++        sender.sendMessage(ChatColor.GRAY + "  /ST preset <survival|skyblock|minigame>");
++        sender.sendMessage(ChatColor.GRAY + "  /ST migrate");
++    }
++
++    private void sendAddonsHelp(CommandSender sender) {
++        sender.sendMessage(PREFIX + "Addon subcommands: list, enable <id>, disable <id>, info <id>");
++    }
++
++    @Override
++    public List<String> onTabComplete(@NotNull CommandSender sender,
++                                      @NotNull Command command,
++                                      @NotNull String alias,
++                                      @NotNull String[] args) {
++        if (args.length == 1) {
++            return filter(Arrays.asList("version","tweaks","addons","update","diag","preset","migrate"), args[0]);
++        }
++        if (args.length == 2) {
++            return switch (args[0].toLowerCase()) {
++                case "addons"  -> filter(Arrays.asList("list","enable","disable","info"), args[1]);
++                case "update"  -> filter(Arrays.asList("now","30s","5m","10m"), args[1]);
++                case "preset"  -> filter(Arrays.asList("survival","skyblock","minigame"), args[1]);
++                default        -> Collections.emptyList();
++            };
++        }
++        if (args.length == 3 && args[0].equalsIgnoreCase("addons")
++                && (args[1].equalsIgnoreCase("enable") || args[1].equalsIgnoreCase("disable")
++                || args[1].equalsIgnoreCase("info"))) {
++            return filter(AddonLoader.getInstance().getInstalledAddonIds(), args[2]);
++        }
++        return Collections.emptyList();
++    }
++
++    private static List<String> filter(List<String> options, String prefix) {
++        List<String> result = new ArrayList<>();
++        for (String o : options) if (o.startsWith(prefix.toLowerCase())) result.add(o);
++        return result;
++    }
++}

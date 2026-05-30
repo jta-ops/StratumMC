@@ -1,103 +1,107 @@
-Stratum [![Version](https://img.shields.io/maven-metadata/v?metadataUrl=https%3A%2F%2Fartifactory.papermc.io%2Fartifactory%2Funiverse%2Fio%2Fpapermc%2Fpaper%2Fpaper-api%2Fmaven-metadata.xml&strategy=highestVersion&filter=26.1*&label=version&color=%23344ceb
-)](https://stratum.mc/downloads)
-[![Stratum Build Status](https://img.shields.io/github/actions/workflow/status/StratumMC/Stratum/build.yml?branch=main)](https://github.com/StratumMC/Stratum/actions)
-[![Discord](https://img.shields.io/discord/289587909051416579.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://stratum.mc/discord)
-[![GitHub Sponsors](https://img.shields.io/github/sponsors/StratumMC?label=GitHub%20Sponsors)](https://github.com/sponsors/StratumMC)
-[![Open Collective](https://img.shields.io/opencollective/all/stratummc?label=OpenCollective%20Sponsors)](https://opencollective.com/stratummc)
-===========
+# Stratum MC
 
-The most widely used, high-performance Minecraft server that aims to fix gameplay and mechanics inconsistencies.
+[![Build](https://img.shields.io/github/actions/workflow/status/jta-ops/StratumMC/build.yml?branch=main&label=build)](https://github.com/jta-ops/StratumMC/actions)
+[![License](https://img.shields.io/github/license/jta-ops/StratumMC)](LICENSE.md)
 
+**Stratum** is a high-performance Minecraft server fork built on [Paper](https://github.com/PaperMC/Paper), designed for public server networks. It ships with a signed plugin/tweak system, a safe self-update mechanism via a separate launcher process, and first-class operator tooling.
 
-**Support and Project Discussion:**
-- [Our forums](https://stratum.mc/forums) or [Discord](https://stratum.mc/discord)
+---
 
-How To (Server Admins)
-------
-Paperclip is a jar file that you can download and run just like a normal jar file.
+## What makes Stratum different
 
-Download Stratum from our [downloads page](https://stratum.mc/downloads).
+| Feature | Description |
+|---|---|
+| **Tweaks** | Always-on signed code modules (`Stratum1.N`) pulled from the Stratum API. Patch-like, never disableable, folded into core on a major release. |
+| **Addons** | Opt-in, owner-toggleable features signed and distributed via the Stratum API. |
+| **Safe updates** | `/ST update` — passive, immediate, or scheduled. The server never overwrites its own running JAR; all swapping is done by `stratum-launcher`. |
+| **Signed everything** | All tweaks, addons, and release JARs are Ed25519-signed. Nothing loads without verification. |
+| **Metrics** | Optional Prometheus-format `/metrics` endpoint. |
 
-Run the Paperclip jar directly from your server. Just like old times
+---
 
-* Documentation on using Stratum: [docs.stratum.mc](https://docs.stratum.mc)
-* For a sneak peek at upcoming features, [see here](https://github.com/StratumMC/Stratum/projects)
+## Version matrix
 
-How To (Plugin Developers)
-------
-* See our API [here](stratum-api)
-* See upcoming, pending, and recently added API [here](https://github.com/orgs/StratumMC/projects/2/views/4)
-* Stratum API javadocs here: [stratum.mc/javadocs](https://stratum.mc/javadocs/)
-#### Repository (for stratum-api)
-See [the docs](https://docs.stratum.mc/stratum/dev/project-setup/#adding-stratum-as-a-dependency) for more details.
-##### Gradle
-```kotlin
-repositories {
-    maven {
-        url = uri("https://repo.papermc.io/repository/maven-public/")
-    }
-}
+Each Minecraft protocol version is a separate build. Client-version bridging is done via [ViaVersion](https://github.com/ViaVersion/ViaVersion) plugins — the JAR itself is locked to one version.
 
-dependencies {
-    compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
-}
+| Stratum branch | Minecraft version |
+|---|---|
+| `main` | 26.1.2 |
+| `1.21.5` | 1.21.5 |
+| `1.21.6` | 1.21.6 |
 
-java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
-}
+---
+
+## Three components
+
 ```
-##### Maven
-
-```xml
-<repository>
-    <id>papermc</id>
-    <url>https://repo.papermc.io/repository/maven-public/</url>
-</repository>
+stratum-server      — the Minecraft server JAR (this repo, paper-server/)
+stratum-launcher    — supervisor that launches the server and swaps JARs
+stratum-api-server  — REST backend: version metadata, signed tweaks & addons
 ```
 
-```xml
-<dependency>
-    <groupId>io.papermc.paper</groupId>
-    <artifactId>paper-api</artifactId>
-    <version>[26.1.2.build,)</version>
-    <scope>provided</scope>
-</dependency>
+---
+
+## Building
+
+> **Prerequisites:** JDK 21+, Git
+
+```bash
+git clone https://github.com/jta-ops/StratumMC
+cd StratumMC
+./gradlew applyPatches
+./gradlew build
+# Output: paper-server/build/libs/stratum-*-paperclip-*.jar
 ```
 
-How To (Compiling Jar From Source)
-------
-To compile Stratum, you need JDK 25 and an internet connection.
+Releases are built and signed automatically by GitHub Actions on each tagged push.
 
-Clone this repo, run `./gradlew applyPatches`, then `./gradlew createPaperclipJar` from your terminal. You can find the compiled jar in the `stratum-server/build/libs` directory.
+---
 
-To get a full list of tasks, run `./gradlew tasks`.
+## Running
 
-How To (Pull Request)
-------
-See [Contributing](CONTRIBUTING.md)
+```bash
+# Recommended: use the launcher so updates work safely
+java -jar stratum-launcher.jar stratum-server.jar
 
-Old Versions (1.21.3 and below)
-------
-For branches of versions 1.8-1.21.3, please see our [archive repository](https://github.com/StratumMC/Stratum-archive).
+# Or directly (no self-update support):
+java @aikar-flags.txt -jar stratum-server.jar --nogui
+```
 
-Support Us
-------
-First of all, thank you for considering helping out, we really appreciate that!
+See `aikar-flags.txt` for recommended JVM flags.
 
-StratumMC has various recurring expenses, mostly related to infrastructure. Stratum uses [Open Collective](https://opencollective.com/) via the [Open Source Collective fiscal host](https://opencollective.com/opensource) to manage expenses. Open Collective allows us to be extremely transparent, so you can always see how your donations are used. You can read more about financially supporting StratumMC [on our website](https://stratum.mc/sponsors).
+---
 
-You can find our collective [here](https://opencollective.com/stratummc), or you can donate via GitHub Sponsors [here](https://github.com/sponsors/StratumMC), which will also go towards the collective.
+## Commands
 
-Special Thanks To:
--------------
+| Command | Description |
+|---|---|
+| `/ST version` | Show version, build, and git commit |
+| `/ST tweaks` | List active tweaks (read-only) |
+| `/ST addons list` | List installed addons |
+| `/ST addons enable/disable <id>` | Toggle an addon |
+| `/ST update` | Passive update (waits for empty server) |
+| `/ST update now` | Immediate update (kicks all players) |
+| `/ST update <time>` | Scheduled update (e.g. `5m`, `30s`) |
+| `/ST diag` | Live health report |
+| `/ST preset <type>` | Apply config preset (`survival`, `skyblock`, `minigame`) |
+| `/ST migrate` | Detect and port Paper/Purpur config |
 
-[![YourKit-Logo](https://www.yourkit.com/images/yklogo.png)](https://www.yourkit.com/)
+Permission node: `stratum.admin` for update/diag/addon management, `stratum.preset` for presets.
 
-[YourKit](https://www.yourkit.com/), makers of the outstanding java profiler, support open source projects of all kinds with their full featured [Java](https://www.yourkit.com/java/profiler) and [.NET](https://www.yourkit.com/.net/profiler) application profilers. We thank them for granting Stratum an OSS license so that we can make our software the best it can be.
+---
 
-[<img src="https://user-images.githubusercontent.com/21148213/121807008-8ffc6700-cc52-11eb-96a7-2f6f260f8fda.png" alt="" width="150">](https://www.jetbrains.com)
+## Contributing
 
-[JetBrains](https://www.jetbrains.com/), creators of the IntelliJ IDEA, supports Stratum with one of their [Open Source Licenses](https://www.jetbrains.com/opensource/). IntelliJ IDEA is the recommended IDE for working with Stratum, and most of the Stratum team uses it.
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: all server changes go through patches.
 
-All our sponsors!  
-[![Sponsor Image](https://raw.githubusercontent.com/StratumMC/stratum.mc/data/sponsors.png)](https://stratum.mc/sponsors)
+```bash
+# Make your change in paper-server/src/
+./gradlew rebuildPatches
+git commit -m "feat: my change"
+```
+
+---
+
+## Security & signing
+
+See [SECURITY.md](SECURITY.md) for the full trust model, key management, and how to verify a release.
