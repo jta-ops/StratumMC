@@ -23,8 +23,13 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Configure git identity
+        run: |
+          git config --global user.name "Stratum CI"
+          git config --global user.email "ci@stratum.mc"
+
       - name: Apply patches
-        run: ./gradlew applyPatches --stacktrace
+        run: ./gradlew applyPatches
         env:
           BUILD_NUMBER: ${{ github.run_number }}
 
