@@ -161,9 +161,6 @@
              return false;
          }
  
-+        // Stratum start - install/update bootstrap plugin before plugins load
-+        mc.stratum.StratumPluginInstaller.installOrUpdate();
-+        // Stratum end
 +        // CraftBukkit start
 +        this.server.loadPlugins();
 +        this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.STARTUP);
@@ -213,17 +210,11 @@
          LOGGER.info("Preparing level \"{}\"", this.getLevelIdName());
 -        this.loadLevel();
 +        this.loadLevel(this.storageSource.getLevelId()); // CraftBukkit
-+        // Stratum start - initialise after world loads (addons/tweaks/config/key)
-+        mc.stratum.StratumServer.getInstance().init(this);
-+        // Stratum end
          long elapsed = Util.getNanos() - levelNanoTime;
          String time = String.format(Locale.ROOT, "%.3fs", elapsed / 1.0E9);
 -        LOGGER.info("Done ({})! For help, type \"help\"", time);
 +        LOGGER.info("Done preparing level \"{}\" ({})", this.getLevelIdName(), time); // Paper - Improve startup message, add total time
 +        this.initPostWorld(); // Paper - don't include plugins in world preparation time
-+        // Stratum start - register /st command after Bukkit CommandMap is ready
-+        mc.stratum.StratumServer.getInstance().registerCommands();
-+        // Stratum end
          if (properties.announcePlayerAchievements != null) {
 -            this.getGameRules().set(GameRules.SHOW_ADVANCEMENT_MESSAGES, properties.announcePlayerAchievements, this);
 +            this.getAllLevels().forEach(l -> l.getGameRules().set(GameRules.SHOW_ADVANCEMENT_MESSAGES, properties.announcePlayerAchievements, this.overworld())); // Paper - per-world game rules

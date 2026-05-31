@@ -59,6 +59,13 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
     private long serverStartTime;
     private volatile boolean updateReady = false;
     private String currentBuild = "unknown";
+    private volatile boolean serverHasPro = false;
+
+    private static final String STRATUM_VERSION = "2.0";
+    // ANSI blue gradient codes for console output
+    private static final String[] BLUE = {"\033[38;5;21m","\033[38;5;27m","\033[38;5;33m","\033[38;5;39m","\033[38;5;45m","\033[38;5;51m"};
+    private static final String BOLD  = "\033[1m";
+    private static final String RESET = "\033[0m";
 
     // ── Dashboard ────────────────────────────────────────────────────────────
     private final List<String> consoleBatch = Collections.synchronizedList(new ArrayList<>());
@@ -112,6 +119,7 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
                 }
 
                 licenseVerified = true;
+                checkProStatus();
                 printStartupBanner();
                 startHeartbeat();
                 startTabListTask();
@@ -1065,6 +1073,49 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
 
     private String readLicenseFromConfig() { return getConfig().getString("license-key", null); }
     private void writeLicenseToConfig(String key) { getConfig().set("license-key", key); saveConfig(); }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PRO STATUS CHECK + BLUE VERSION BANNER
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void checkProStatus() {
+        try {
+            String resp = sendApiRequest("GET", "/../pro/check", null);
+            serverHasPro = resp != null && resp.contains("\"pro\":true");
+        } catch (Exception e) {
+            serverHasPro = false;
+        }
+        printBlueVersionBanner();
+    }
+
+    private void printBlueVersionBanner() {
+        io.papermc.paper.ServerBuildInfo build;
+        try { build = io.papermc.paper.ServerBuildInfo.buildInfo(); } catch (Exception e) { build = null; }
+        String mc = build != null ? build.minecraftVersionId() : "?";
+        String buildNum = build != null && build.buildNumber().isPresent() ? String.valueOf(build.buildNumber().getAsInt()) : "?";
+
+        String[] art = {
+            "  ██████╗ ████████╗██████╗  █████╗ ████████╗██╗   ██╗███╗   ███╗",
+            "  ██╔════╝╚══██╔══╝██╔══██╗██╔══██╗╚══██╔══╝██║   ██║████╗ ████║",
+            "  ███████╗   ██║   ██████╔╝███████║   ██║   ██║   ██║██╔████╔██║",
+            "  ╚════██║   ██║   ██╔══██╗██╔══██║   ██║   ██║   ██║██║╚██╔╝██║",
+            "  ███████║   ██║   ██║  ██║██║  ██║   ██║   ╚██████╔╝██║ ╚═╝ ██║",
+            "  ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝"
+        };
+
+        getLogger().info("");
+        for (int i = 0; i < art.length; i++) {
+            getLogger().info(BLUE[i % BLUE.length] + BOLD + art[i] + RESET);
+        }
+        getLogger().info("");
+        getLogger().info(BLUE[2] + BOLD + "  Stratum " + STRATUM_VERSION + RESET
+            + "  ·  Minecraft " + BLUE[4] + mc + RESET
+            + "  ·  Build " + BLUE[5] + "#" + buildNum + RESET);
+        getLogger().info(BLUE[1] + "  Plugin " + BOLD + "v" + getDescription().getVersion() + RESET
+            + (serverHasPro ? "  " + BLUE[4] + BOLD + "◆ PRO" + RESET : "  " + "\033[90m◇ FREE\033[0m"));
+        getLogger().info(BLUE[0] + "  stratumserver.net" + RESET);
+        getLogger().info("");
+    }
 
     // ══════════════════════════════════════════════════════════════════════════
     // VANISH SYSTEM

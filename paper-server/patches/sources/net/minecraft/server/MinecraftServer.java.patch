@@ -604,9 +604,6 @@
              this.cancelRecordingMetrics();
          }
  
-+        // Stratum start - clean up Stratum before plugins disable
-+        mc.stratum.StratumServer.getInstance().shutdown();
-+        // Stratum end
          LOGGER.info("Stopping server");
 +        Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
 +        // CraftBukkit start
@@ -818,7 +815,11 @@
 +                LOGGER.info("*************************************************************************************");
 +            }
 +            // Paper end - Add onboarding message for initial server start
-+            // Stratum - suppress Paper update nag (Stratum has its own update manager)
++            // Paper start - Improve outdated version checking
++            if (System.getProperty("paper.disableStartupVersionCheck") == null && io.papermc.paper.configuration.GlobalConfiguration.get().updateChecker.enabled) {
++                CompletableFuture.runAsync(com.destroystokyo.paper.PaperVersionFetcher::getUpdateStatusStartupMessage, io.papermc.paper.util.MCUtil.ASYNC_EXECUTOR);
++            }
++            // Paper end - Improve outdated version checking
 +
              while (this.running) {
 -                long thisTickNanos;

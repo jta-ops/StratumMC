@@ -9,7 +9,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..0bcf4b1cf06268418637465cc4e9b35862a0a71a
 --- /dev/null
 +++ b/mc/stratum/addons/AddonLoader.java
-@@ -0,0 +1,346 @@
+@@ -0,0 +1,309 @@
 +package mc.stratum.addons;
 +
 +import mc.stratum.audit.AuditLog;
@@ -143,43 +143,6 @@ index 0000000000000000000000000000000000000000..0bcf4b1cf06268418637465cc4e9b358
 +    /** Returns an unmodifiable view of all installed addons (verified, loaded). */
 +    public List<AddonMeta> getInstalledAddons() {
 +        return Collections.unmodifiableList(installedAddons);
-+    }
-+
-+    /**
-+     * Loads a single addon JAR at runtime (for marketplace installs and hot-reload).
-+     * Returns null on success, or an error message on failure.
-+     */
-+    public String loadSingleRuntime(final File jar, final java.security.PublicKey primaryKey,
-+                                    final java.security.PublicKey tier2Key) {
-+        try {
-+            // Remove any existing instance with same id first (hot-reload)
-+            try (java.util.jar.JarFile jf = new java.util.jar.JarFile(jar)) {
-+                final java.util.jar.JarEntry entry = jf.getJarEntry("META-INF/addon.json");
-+                if (entry != null) {
-+                    final String json = new String(jf.getInputStream(entry).readAllBytes());
-+                    final AddonMeta meta = AddonMeta.fromJson(json);
-+                    if (meta != null && meta.id() != null) {
-+                        // Disable and remove existing
-+                        final String existingId = meta.id();
-+                        installedAddons.removeIf(m -> existingId.equals(m.id()));
-+                        enabledAddons.removeIf(m -> existingId.equals(m.id()));
-+                        final mc.stratum.addons.StratumAddon old = liveInstances.remove(existingId);
-+                        if (old != null) { try { old.onDisable(); } catch (Exception ignored) {} }
-+                        final ClassLoader oldCl = classLoaders.remove(existingId);
-+                        if (oldCl instanceof URLClassLoader) { try { ((URLClassLoader)oldCl).close(); } catch (Exception ignored) {} }
-+                    }
-+                }
-+            }
-+            loadSingle(jar, primaryKey, tier2Key);
-+            // Enable the newly loaded addon
-+            installedAddons.stream()
-+                    .filter(m -> { try { return jar.getName().startsWith(m.id()); } catch (Exception e) { return false; } })
-+                    .findFirst()
-+                    .ifPresent(m -> { if (!enabledAddons.contains(m)) enabledAddons.add(m); });
-+            return null;
-+        } catch (Exception e) {
-+            return e.getMessage();
-+        }
 +    }
 +
 +    /** Returns an unmodifiable view of currently enabled addons. */

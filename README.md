@@ -1,109 +1,120 @@
-# Stratum MC
-
-[![Build](https://img.shields.io/github/actions/workflow/status/jta-ops/StratumMC/build.yml?branch=main&label=build)](https://github.com/jta-ops/StratumMC/actions)
-[![License](https://img.shields.io/github/license/jta-ops/StratumMC)](LICENSE.md)
-
-**Stratum** is a high-performance Minecraft server fork built on [Paper](https://github.com/PaperMC/Paper), designed for public server networks. It ships with a signed plugin/tweak system, a safe self-update mechanism via a separate launcher process, and first-class operator tooling.
-
-# **[STRATUM SITE](https://stratumserver.net)**
-
----
-
-## What makes Stratum different
-
-| Feature | Description |
-|---|---|
-| **Tweaks** | Always-on signed code modules (`Stratum1.N`) pulled from the Stratum API. Patch-like, never disableable, folded into core on a major release. |
-| **Addons** | Opt-in, owner-toggleable features signed and distributed via the Stratum API. |
-| **Safe updates** | `/ST update` — passive, immediate, or scheduled. The server never overwrites its own running JAR; all swapping is done by `stratum-launcher`. |
-| **Signed everything** | All tweaks, addons, and release JARs are Ed25519-signed. Nothing loads without verification. |
-| **Metrics** | Optional Prometheus-format `/metrics` endpoint. |
-
----
-
-## Version matrix
-
-Each Minecraft protocol version is a separate build. Client-version bridging is done via [ViaVersion](https://github.com/ViaVersion/ViaVersion) plugins — the JAR itself is locked to one version.
-
-| Stratum branch | Minecraft version |
-|---|---|
-| `main` | 26.1.2 |
-| `1.21.5` | 1.21.5 |
-| `1.21.6` | 1.21.6 |
-
----
-
-## Three components
+<div align="center">
 
 ```
-stratum-server      — the Minecraft server JAR (this repo, paper-server/)
-stratum-launcher    — supervisor that launches the server and swaps JARs
-stratum-api-server  — REST backend: version metadata, signed tweaks & addons
+  ███████╗████████╗██████╗  █████╗ ████████╗██╗   ██╗███╗   ███╗
+  ██╔════╝╚══██╔══╝██╔══██╗██╔══██╗╚══██╔══╝██║   ██║████╗ ████║
+  ███████╗   ██║   ██████╔╝███████║   ██║   ██║   ██║██╔████╔██║
+  ╚════██║   ██║   ██╔══██╗██╔══██║   ██║   ██║   ██║██║╚██╔╝██║
+  ███████║   ██║   ██║  ██║██║  ██║   ██║   ╚██████╔╝██║ ╚═╝ ██║
+  ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝     ╚═╝
 ```
+
+**Stratum MC 2.0** — High-performance Minecraft server software built on Paper.
+
+[![Build](https://github.com/jta-ops/StratumMC/actions/workflows/build.yml/badge.svg)](https://github.com/jta-ops/StratumMC/actions/workflows/build.yml)
+[![Minecraft](https://img.shields.io/badge/Minecraft-26.1.2-blue?style=flat-square)](https://stratumserver.net)
+[![Website](https://img.shields.io/badge/Website-stratumserver.net-00d4ff?style=flat-square)](https://stratumserver.net)
+
+</div>
 
 ---
 
-## Building
-
-> **Prerequisites:** JDK 21+, Git
+## Install
 
 ```bash
-git clone https://github.com/jta-ops/StratumMC
-cd StratumMC
-./gradlew applyPatches
-./gradlew build
-# Output: paper-server/build/libs/stratum-*-paperclip-*.jar
+curl stratumserver.net/cli | bash
 ```
-
-Releases are built and signed automatically by GitHub Actions on each tagged push.
 
 ---
 
-## Running
+## What is Stratum?
 
-```bash
-# Recommended: use the launcher so updates work safely
-java -jar stratum-launcher.jar stratum-server.jar
+Stratum is a drop-in Paper replacement that adds smart server management, a verified addon ecosystem, and built-in diagnostics — without touching your plugins or world data.
 
-# Or directly (no self-update support):
-java @aikar-flags.txt -jar stratum-server.jar --nogui
-```
+---
 
-See `aikar-flags.txt` for recommended JVM flags.
+## Features
+
+| Feature | Free | Pro |
+|---|:---:|:---:|
+| All Paper optimisations | ✓ | ✓ |
+| `/st diag` — live TPS/RAM/chunk snapshot | ✓ | ✓ |
+| Signed addon + tweak verification | Tweaks only | ✓ Full |
+| Addon Marketplace (`/st addons install`) | Community | All |
+| Addon hot-reload (`/st addons reload`) | — | ✓ |
+| Proxy network (`/st connect`) | 3 servers | 10 servers |
+| World snapshots (`/st snapshot`) | With cooldown | Unlimited |
+| Dashboard console | Read-only | Full |
+| Scheduled restarts | 1/week | Unlimited |
+| Webhook alerts | ✓ | ✓ |
+| Vanish system | ✓ | ✓ |
+| Performance watchdog | ✓ | ✓ |
+| Smart whitelist | — | ✓ |
+| Crash recovery | — | ✓ |
 
 ---
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `/ST version` | Show version, build, and git commit |
-| `/ST tweaks` | List active tweaks (read-only) |
-| `/ST addons list` | List installed addons |
-| `/ST addons enable/disable <id>` | Toggle an addon |
-| `/ST update` | Passive update (waits for empty server) |
-| `/ST update now` | Immediate update (kicks all players) |
-| `/ST update <time>` | Scheduled update (e.g. `5m`, `30s`) |
-| `/ST diag` | Live health report |
-| `/ST preset <type>` | Apply config preset (`survival`, `skyblock`, `minigame`) |
-| `/ST migrate` | Detect and port Paper/Purpur config |
+```
+/st version          Build info
+/st diag             Live server health snapshot
+/st addons list      List installed addons
+/st addons install   Install from marketplace
+/st addons reload    Hot-reload an addon
+/st snapshot save    Save a world snapshot
+/st preset           Apply performance preset
+/st update           Schedule or trigger update
+/st migrate          Import Paper/Purpur config
+/st connect          Link servers into a proxy network
 
-Permission node: `stratum.admin` for update/diag/addon management, `stratum.preset` for presets.
-
----
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). The short version: all server changes go through patches.
-
-```bash
-# Make your change in paper-server/src/
-./gradlew rebuildPatches
-git commit -m "feat: my change"
+/stb vanish          Toggle staff vanish
+/stb snapshot        Take/list world snapshots
+/stb restart         Schedule a restart with countdown
+/stb whitelist       Toggle smart whitelist
 ```
 
 ---
 
-## Security & signing
+## Addon System
 
-See [SECURITY.md](SECURITY.md) for the full trust model, key management, and how to verify a release.
+Addons are signed with Ed25519 — only verified addons load. Drop a `.jar` and `.sig` in your `addons/` folder, or install directly from the marketplace:
+
+```
+/st addons install <id>
+/st addons search <query>
+```
+
+---
+
+## Build from source
+
+```bash
+git clone https://github.com/jta-ops/StratumMC
+cd StratumMC
+./gradlew applyPatches
+./gradlew build createPaperclipJar
+```
+
+---
+
+## Pricing
+
+| | Free | Pro (1 server) | Pro (5 servers) |
+|---|:---:|:---:|:---:|
+| Price | $0 | $3/mo | $9/mo |
+| Core server | ✓ | ✓ | ✓ |
+| Full marketplace | — | ✓ | ✓ |
+| All Pro features | — | ✓ | ✓ |
+
+[View full pricing →](https://stratumserver.net/pricing)
+
+---
+
+<div align="center">
+
+**[stratumserver.net](https://stratumserver.net)**
+
+Built on [PaperMC](https://papermc.io)
+
+</div>

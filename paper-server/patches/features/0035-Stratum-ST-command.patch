@@ -54,7 +54,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..a0c7ecb841125b0a4034ca23f9c07cc36386ed9f
 --- /dev/null
 +++ b/mc/stratum/commands/StratumCommand.java
-@@ -0,0 +1,496 @@
+@@ -0,0 +1,401 @@
 +package mc.stratum.commands;
 +
 +import io.papermc.paper.ServerBuildInfo;
@@ -124,14 +124,7 @@ index 0000000000000000000000000000000000000000..a0c7ecb841125b0a4034ca23f9c07cc3
 +            }
 +            case "addons"   -> {
 +                if (!requirePerm(sender, "stratum.admin")) return true;
-+                if (args.length > 1 && args[1].equalsIgnoreCase("install")) { cmdAddonInstall(sender, args.length > 2 ? args[2] : ""); return true; }
-+                if (args.length > 1 && args[1].equalsIgnoreCase("search"))  { cmdAddonSearch(sender, args.length > 2 ? args[2] : ""); return true; }
-+                if (args.length > 1 && args[1].equalsIgnoreCase("reload"))  { cmdAddonReload(sender, args.length > 2 ? args[2] : ""); return true; }
 +                cmdAddons(sender, args);
-+            }
-+            case "snapshot" -> {
-+                if (!requirePerm(sender, "stratum.admin")) return true;
-+                cmdSnapshot(sender, args);
 +            }
 +            case "update"   -> {
 +                if (!requirePerm(sender, "stratum.admin")) return true;
@@ -461,93 +454,5 @@ index 0000000000000000000000000000000000000000..a0c7ecb841125b0a4034ca23f9c07cc3
 +        for (String c : candidates) {
 +            if (c.toLowerCase(Locale.ROOT).startsWith(lp)) out.add(c);
 +        }
-+    }
-+
-+    // ── /ST snapshot ──────────────────────────────────────────────────────────
-+
-+    private void cmdSnapshot(CommandSender sender, String[] args) {
-+        if (args.length < 2) {
-+            sender.sendMessage(PREFIX + INFO + "Usage: /st snapshot <save|list|delete> [name]");
-+            return;
-+        }
-+        switch (args[1].toLowerCase(Locale.ROOT)) {
-+            case "save" -> {
-+                String name = args.length > 2 ? args[2] : "snapshot";
-+                sender.sendMessage(PREFIX + INFO + "Taking snapshot '" + name + "'... this may take a moment.");
-+                java.util.concurrent.CompletableFuture.runAsync(() -> {
-+                    String result = mc.stratum.snapshot.SnapshotManager.save(name);
-+                    Bukkit.getScheduler().runTask(
-+                        (org.bukkit.plugin.Plugin) Bukkit.getPluginManager().getPlugin("StratumBootstrap"),
-+                        () -> sender.sendMessage(PREFIX + OK + result));
-+                });
-+            }
-+            case "list" -> {
-+                java.util.List<String> snaps = mc.stratum.snapshot.SnapshotManager.list();
-+                if (snaps.isEmpty()) { sender.sendMessage(PREFIX + INFO + "No snapshots found."); return; }
-+                sender.sendMessage(PREFIX + WHITE + "Snapshots:");
-+                snaps.forEach(s -> sender.sendMessage("  " + ChatColor.GRAY + s));
-+            }
-+            case "delete" -> {
-+                if (args.length < 3) { sender.sendMessage(PREFIX + ERR + "Specify snapshot name."); return; }
-+                sender.sendMessage(PREFIX + INFO + mc.stratum.snapshot.SnapshotManager.delete(args[2]));
-+            }
-+            default -> sender.sendMessage(PREFIX + ERR + "Usage: /st snapshot <save|list|delete> [name]");
-+        }
-+    }
-+
-+    // ── /ST addons install / search / reload ──────────────────────────────────
-+
-+    private void cmdAddonInstall(CommandSender sender, String id) {
-+        sender.sendMessage(PREFIX + INFO + "Fetching addon '" + id + "' from marketplace...");
-+        final mc.stratum.StratumServer ss = mc.stratum.StratumServer.getInstance();
-+        final mc.stratum.addons.AddonLoader loader = ss.getAddonLoader();
-+        java.security.PublicKey key;
-+        try {
-+            java.io.InputStream in = mc.stratum.StratumServer.class.getResourceAsStream("/stratum_public_key.pem");
-+            if (in == null) { sender.sendMessage(PREFIX + ERR + "Public key not found."); return; }
-+            String pem = new String(in.readAllBytes()).replace("-----BEGIN PUBLIC KEY-----","").replace("-----END PUBLIC KEY-----","").replaceAll("\\s","");
-+            byte[] keyBytes = java.util.Base64.getDecoder().decode(pem);
-+            key = java.security.KeyFactory.getInstance("Ed25519").generatePublic(new java.security.spec.X509EncodedKeySpec(keyBytes));
-+        } catch (Exception e) {
-+            sender.sendMessage(PREFIX + ERR + "Key load failed: " + e.getMessage()); return;
-+        }
-+        final java.security.PublicKey fKey = key;
-+        java.util.concurrent.CompletableFuture.runAsync(() -> {
-+            String result = mc.stratum.marketplace.AddonMarketplaceClient.installAddon(id, loader, fKey);
-+            Bukkit.getScheduler().runTask(
-+                (org.bukkit.plugin.Plugin) Bukkit.getPluginManager().getPlugin("StratumBootstrap"),
-+                () -> sender.sendMessage(PREFIX + (result.startsWith("Installed") ? OK : ERR) + result));
-+        });
-+    }
-+
-+    private void cmdAddonSearch(CommandSender sender, String query) {
-+        sender.sendMessage(PREFIX + INFO + "Searching marketplace...");
-+        java.util.concurrent.CompletableFuture.runAsync(() -> {
-+            String json = mc.stratum.marketplace.AddonMarketplaceClient.listAddons(query);
-+            java.util.List<String> results = mc.stratum.marketplace.AddonMarketplaceClient.parseAddonList(json);
-+            Bukkit.getScheduler().runTask(
-+                (org.bukkit.plugin.Plugin) Bukkit.getPluginManager().getPlugin("StratumBootstrap"),
-+                () -> {
-+                    if (results.isEmpty()) { sender.sendMessage(PREFIX + INFO + "No addons found."); return; }
-+                    sender.sendMessage(PREFIX + WHITE + "Marketplace addons:");
-+                    results.forEach(r -> sender.sendMessage("  " + ChatColor.GRAY + r));
-+                });
-+        });
-+    }
-+
-+    private void cmdAddonReload(CommandSender sender, String id) {
-+        final mc.stratum.addons.AddonLoader loader = mc.stratum.StratumServer.getInstance().getAddonLoader();
-+        java.io.File jar = new java.io.File("addons/" + id + ".jar");
-+        if (!jar.exists()) { sender.sendMessage(PREFIX + ERR + "Addon JAR not found: addons/" + id + ".jar"); return; }
-+        java.security.PublicKey key;
-+        try {
-+            java.io.InputStream in = mc.stratum.StratumServer.class.getResourceAsStream("/stratum_public_key.pem");
-+            String pem = new String(in.readAllBytes()).replace("-----BEGIN PUBLIC KEY-----","").replace("-----END PUBLIC KEY-----","").replaceAll("\\s","");
-+            byte[] keyBytes = java.util.Base64.getDecoder().decode(pem);
-+            key = java.security.KeyFactory.getInstance("Ed25519").generatePublic(new java.security.spec.X509EncodedKeySpec(keyBytes));
-+        } catch (Exception e) { sender.sendMessage(PREFIX + ERR + "Key load failed."); return; }
-+        String result = loader.loadSingleRuntime(jar, key, key);
-+        if (result == null) sender.sendMessage(PREFIX + OK + "Addon '" + id + "' reloaded.");
-+        else sender.sendMessage(PREFIX + ERR + "Reload failed: " + result);
 +    }
 +}
