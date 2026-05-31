@@ -266,9 +266,16 @@ index 0000000000000000000000000000000000000000..3a72da896e609f951106fa43e7d648c1
 +    }
 +
 +    private static boolean isNewerThanCurrent(final String remote) {
-+        // Simple string-based comparison: "Stratum1.5" > "Stratum1.0"
-+        // Real implementation would parse semver; this is a reasonable placeholder.
-+        return remote != null && !remote.isEmpty();
++        if (remote == null || remote.isEmpty()) return false;
++        final String currentBuild = ServerBuildInfo.buildInfo().buildNumber()
++            .map(String::valueOf).orElse("0");
++        final int dash = remote.lastIndexOf('-');
++        final String remoteBuild = dash >= 0 ? remote.substring(dash + 1) : remote;
++        try {
++            return Integer.parseInt(remoteBuild) > Integer.parseInt(currentBuild);
++        } catch (NumberFormatException e) {
++            return false;
++        }
 +    }
 +
 +    private static void updateMotd(final Server server, final String motd) {

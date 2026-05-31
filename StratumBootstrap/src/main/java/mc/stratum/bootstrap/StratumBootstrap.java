@@ -21,6 +21,12 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.Material;
+import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.inventory.meta.SkullMeta;
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -59,9 +65,25 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
     private long serverStartTime;
     private volatile boolean updateReady = false;
     private String currentBuild = "unknown";
-    private volatile boolean serverHasPro = false;
-
     private static final String STRATUM_VERSION = "2.0";
+
+    private volatile boolean serverHasPro = false;
+    private volatile boolean isUpdating = false;
+    private volatile String updatingMotdBackup = null;
+
+    private static final String[] MOTD_ANIMATED = {
+            "§bStratumServer §7┃ §fWhere performance meets §b§lprecision",
+            "§bStratumServer §7┃ §fPowered by §bStratumMC §7v" + STRATUM_VERSION,
+            "§bStratumServer §7┃ §fNow with §bAI-powered §fserver management",
+            "§bStratumServer §7┃ §f§l%d§7/§f%max% §bplayers online"
+    };
+    private int motdAnimIndex = 0;
+
+    // ── GUI tracking ───
+    private final Map<UUID, String> guiPages = new HashMap<>();
+
+    // ── AI state ───
+    private final Map<UUID, String> aiSessions = new HashMap<>();
     // ANSI blue gradient codes for console output
     private static final String[] BLUE = {"\033[38;5;21m","\033[38;5;27m","\033[38;5;33m","\033[38;5;39m","\033[38;5;45m","\033[38;5;51m"};
     private static final String BOLD  = "\033[1m";
@@ -121,6 +143,7 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
                 licenseVerified = true;
                 checkProStatus();
                 printStartupBanner();
+                printEasterEgg();
                 startHeartbeat();
                 startTabListTask();
                 scheduleBackups();
@@ -667,6 +690,20 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
             case "snapshot":  cmdSnapshot(sender, args); break;
             case "restart":   cmdRestartSchedule(sender, args); break;
             case "whitelist": cmdWhitelist(sender, args); break;
+            case "gamemode":
+            case "gm":        cmdGamemode(sender, args); break;
+            case "fly":       cmdFly(sender); break;
+            case "speed":     cmdSpeed(sender, args); break;
+            case "heal":      cmdHeal(sender); break;
+            case "feed":      cmdFeed(sender); break;
+            case "ping":      cmdPing(sender); break;
+            case "near":      cmdNear(sender, args); break;
+            case "clear":     cmdClear(sender); break;
+            case "tp":
+            case "teleport":  cmdTeleport(sender, args); break;
+            case "time":      cmdTime(sender, args); break;
+            case "ai":        cmdAi(sender, args); break;
+            case "gui":       cmdGui(sender, args); break;
             default:          sendUsage(sender); break;
         }
         return true;
@@ -678,9 +715,44 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
         sender.sendMessage(Component.text("/stb version").color(NamedTextColor.WHITE).append(Component.text(" - Version banner").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb stats").color(NamedTextColor.WHITE).append(Component.text(" - Server stats").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb restart [seconds]").color(NamedTextColor.WHITE).append(Component.text(" - Restart server").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb restart now|cancel").color(NamedTextColor.WHITE).append(Component.text(" - Schedule/cancel restart").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb update").color(NamedTextColor.WHITE).append(Component.text(" - Apply server update").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb dash link").color(NamedTextColor.WHITE).append(Component.text(" - Link to dashboard (step 1)").color(NamedTextColor.GRAY)));
         sender.sendMessage(Component.text("/stb dash link <code>").color(NamedTextColor.WHITE).append(Component.text(" - Confirm link (step 2)").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb vanish").color(NamedTextColor.WHITE).append(Component.text(" - Toggle vanish (perm: stratum.vanish)").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb snapshot save [name]").color(NamedTextColor.WHITE).append(Component.text(" - Take world snapshot").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb snapshot list").color(NamedTextColor.WHITE).append(Component.text(" - List snapshots").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb whitelist on|off").color(NamedTextColor.WHITE).append(Component.text(" - Toggle smart whitelist").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb gamemode <mode>").color(NamedTextColor.WHITE).append(Component.text(" - Change gamemode").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb fly").color(NamedTextColor.WHITE).append(Component.text(" - Toggle flight").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb speed <0.1-10>").color(NamedTextColor.WHITE).append(Component.text(" - Set fly/walk speed").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb heal").color(NamedTextColor.WHITE).append(Component.text(" - Heal self").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb feed").color(NamedTextColor.WHITE).append(Component.text(" - Feed self").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb ping").color(NamedTextColor.WHITE).append(Component.text(" - Check ping").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb near [range]").color(NamedTextColor.WHITE).append(Component.text(" - List nearby players").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb clear").color(NamedTextColor.WHITE).append(Component.text(" - Clear inventory").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb tp <player>").color(NamedTextColor.WHITE).append(Component.text(" - Teleport to player").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb time <day|night|noon|midnight>").color(NamedTextColor.WHITE).append(Component.text(" - Set world time").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb ai <query>").color(NamedTextColor.WHITE).append(Component.text(" - AI server assistant").color(NamedTextColor.GRAY)));
+        sender.sendMessage(Component.text("/stb gui").color(NamedTextColor.WHITE).append(Component.text(" - Open management GUI").color(NamedTextColor.GRAY)));
+    }
+
+    private void printEasterEgg() {
+        String[] eggs = {
+            "Did you know? The first Minecraft server ran on a potato.",
+            "Stratum — because 'Paper' was already taken.",
+            "This server has more uptime than my sleep schedule.",
+            "Build #46 — still fewer bugs than Windows Vista.",
+            "If you can read this, you're too close to the console.",
+            "Powered by determination, caffeine, and Java 25.",
+            "This console message brought to you by the letter 'S'.",
+            "StratumMC: Now with 100% more blocks.",
+            "The chunk just loaded. Be nice to it.",
+            "Your ping is fine. It's the server that's wrong.",
+        };
+        getLogger().info("");
+        getLogger().info("  " + "\033[38;5;45m" + "⚡ " + eggs[new Random().nextInt(eggs.length)] + "\033[0m");
+        getLogger().info("");
     }
 
     private void cmdLicense(CommandSender sender) {
@@ -891,6 +963,10 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
             return;
         }
 
+        isUpdating = true;
+        updatingMotdBackup = customMotd;
+        customMotd = null;
+
         try {
             getLogger().info("Applying server update...");
             getLogger().info("  Backup: " + serverJar.getAbsolutePath() + ".bak");
@@ -935,6 +1011,7 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod(method);
             conn.setRequestProperty("Content-Type", "application/json");
+            if (licenseKey != null) conn.setRequestProperty("Authorization", "Bearer " + licenseKey);
             conn.setConnectTimeout(10000); conn.setReadTimeout(10000);
             if (body != null) { conn.setDoOutput(true); conn.getOutputStream().write(body.getBytes(StandardCharsets.UTF_8)); }
             int code = conn.getResponseCode();
@@ -1307,10 +1384,18 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
 
     @EventHandler(priority = EventPriority.LOW)
     public void onPingMotd(ServerListPingEvent event) {
+        if (licenseBlocked) { event.setMotd(SUSPENDED_MOTD); return; }
+        if (isUpdating) { event.setMotd("§6⚠ §eUpdating §6⚠ §7| §bstratumserver.net"); return; }
         refreshMotd();
-        if (customMotd != null && !licenseBlocked) {
+        if (customMotd != null) {
             event.setMotd(customMotd);
+            return;
         }
+        String line = MOTD_ANIMATED[motdAnimIndex % MOTD_ANIMATED.length];
+        motdAnimIndex++;
+        line = line.replace("%d", String.valueOf(Bukkit.getOnlinePlayers().size()))
+                   .replace("%max%", String.valueOf(Bukkit.getMaxPlayers()));
+        event.setMotd(line);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -1461,5 +1546,321 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
             case "off" -> { setWhitelistEnabled(false); sender.sendMessage(Component.text("Smart Whitelist disabled.").color(NamedTextColor.YELLOW)); }
             default    -> sender.sendMessage(Component.text("Usage: /stb whitelist <on|off>").color(NamedTextColor.YELLOW));
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // NEW INGAME FEATURES
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void cmdGamemode(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.gamemode") && !(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
+            sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return;
+        }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        if (args.length < 2) { sender.sendMessage(Component.text("Usage: /stb gamemode <survival|creative|adventure|spectator>").color(NamedTextColor.YELLOW)); return; }
+        Player p = (Player) sender;
+        org.bukkit.GameMode gm;
+        switch (args[1].toLowerCase()) {
+            case "survival": case "s": gm = org.bukkit.GameMode.SURVIVAL; break;
+            case "creative": case "c": gm = org.bukkit.GameMode.CREATIVE; break;
+            case "adventure": case "a": gm = org.bukkit.GameMode.ADVENTURE; break;
+            case "spectator": case "sp": gm = org.bukkit.GameMode.SPECTATOR; break;
+            default: sender.sendMessage(Component.text("Invalid gamemode.").color(NamedTextColor.RED)); return;
+        }
+        p.setGameMode(gm);
+        p.sendMessage(Component.text("Gamemode updated to " + gm.name().toLowerCase() + ".").color(NamedTextColor.GREEN));
+    }
+
+    private void cmdFly(CommandSender sender) {
+        if (!sender.hasPermission("stratum.fly")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        Player p = (Player) sender;
+        p.setAllowFlight(!p.getAllowFlight());
+        p.sendMessage(Component.text(p.getAllowFlight() ? "Flight enabled." : "Flight disabled.").color(p.getAllowFlight() ? NamedTextColor.GREEN : NamedTextColor.YELLOW));
+    }
+
+    private void cmdSpeed(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.speed")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        if (args.length < 2) { sender.sendMessage(Component.text("Usage: /stb speed <0.1-10>").color(NamedTextColor.YELLOW)); return; }
+        Player p = (Player) sender;
+        try {
+            float speed = Float.parseFloat(args[1]);
+            speed = Math.max(0.1f, Math.min(10f, speed));
+            if (p.isFlying()) p.setFlySpeed(speed / 10f);
+            else p.setWalkSpeed(speed / 10f);
+            p.sendMessage(Component.text("Speed set to " + String.format("%.1f", speed) + ".").color(NamedTextColor.GREEN));
+        } catch (NumberFormatException e) {
+            sender.sendMessage(Component.text("Invalid speed.").color(NamedTextColor.RED));
+        }
+    }
+
+    private void cmdHeal(CommandSender sender) {
+        if (!sender.hasPermission("stratum.heal")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        Player p = (Player) sender;
+        p.setHealth(p.getMaxHealth());
+        p.setFireTicks(0);
+        p.sendMessage(Component.text("Healed.").color(NamedTextColor.GREEN));
+    }
+
+    private void cmdFeed(CommandSender sender) {
+        if (!sender.hasPermission("stratum.feed")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        Player p = (Player) sender;
+        p.setFoodLevel(20);
+        p.setSaturation(10f);
+        p.sendMessage(Component.text("Fed.").color(NamedTextColor.GREEN));
+    }
+
+    private void cmdPing(CommandSender sender) {
+        if (!sender.hasPermission("stratum.ping")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        Player p = (Player) sender;
+        int ping = p.getPing();
+        NamedTextColor color = ping < 50 ? NamedTextColor.GREEN : ping < 150 ? NamedTextColor.YELLOW : NamedTextColor.RED;
+        p.sendMessage(Component.text("Your ping: " + ping + "ms").color(color));
+    }
+
+    private void cmdNear(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.near")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        Player p = (Player) sender;
+        double range = 50;
+        if (args.length > 1) { try { range = Double.parseDouble(args[1]); } catch (NumberFormatException ignored) {} }
+        List<String> nearby = new ArrayList<>();
+        for (Player other : Bukkit.getOnlinePlayers()) {
+            if (other.equals(p)) continue;
+            if (p.getWorld().equals(other.getWorld()) && p.getLocation().distance(other.getLocation()) <= range) {
+                nearby.add(other.getName() + " (" + (int) p.getLocation().distance(other.getLocation()) + "m)");
+            }
+        }
+        if (nearby.isEmpty()) {
+            p.sendMessage(Component.text("No players within " + (int) range + "m.").color(NamedTextColor.GRAY));
+        } else {
+            p.sendMessage(Component.text("Nearby (" + (int) range + "m): " + String.join(", ", nearby)).color(NamedTextColor.GREEN));
+        }
+    }
+
+    private void cmdClear(CommandSender sender) {
+        if (!sender.hasPermission("stratum.clear")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        Player p = (Player) sender;
+        p.getInventory().clear();
+        p.sendMessage(Component.text("Inventory cleared.").color(NamedTextColor.GREEN));
+    }
+
+    private void cmdTeleport(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.teleport")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        if (args.length < 2) { sender.sendMessage(Component.text("Usage: /stb tp <player>").color(NamedTextColor.YELLOW)); return; }
+        Player p = (Player) sender;
+        Player target = Bukkit.getPlayer(args[1]);
+        if (target == null || !target.isOnline()) {
+            p.sendMessage(Component.text("Player not found.").color(NamedTextColor.RED)); return;
+        }
+        p.teleport(target.getLocation());
+        p.sendMessage(Component.text("Teleported to " + target.getName() + ".").color(NamedTextColor.GREEN));
+    }
+
+    private void cmdTime(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.time")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        if (args.length < 2) { sender.sendMessage(Component.text("Usage: /stb time <day|night|noon|midnight>").color(NamedTextColor.YELLOW)); return; }
+        Player p = (Player) sender;
+        long time;
+        switch (args[1].toLowerCase()) {
+            case "day": time = 1000; break;
+            case "night": time = 13000; break;
+            case "noon": time = 6000; break;
+            case "midnight": time = 18000; break;
+            default: sender.sendMessage(Component.text("Usage: /stb time <day|night|noon|midnight>").color(NamedTextColor.YELLOW)); return;
+        }
+        p.getWorld().setTime(time);
+        p.sendMessage(Component.text("Time set to " + args[1].toLowerCase() + ".").color(NamedTextColor.GREEN));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // AI COMMAND
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void cmdAi(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.admin") && !(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
+            sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("Usage: /stb ai <query>").color(NamedTextColor.YELLOW));
+            sender.sendMessage(Component.text("Example: /stb ai why is the server lagging").color(NamedTextColor.GRAY));
+            return;
+        }
+        StringBuilder query = new StringBuilder();
+        for (int i = 1; i < args.length; i++) query.append(args[i]).append(" ");
+        String q = query.toString().trim();
+
+        sender.sendMessage(Component.text("Stratum AI is thinking...").color(NamedTextColor.GRAY));
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                String context = buildAiContext();
+                String body = "{\"query\":" + jsonString(q) + ",\"context\":" + context + ",\"licenseKey\":" + jsonString(licenseKey) + "}";
+                String response = sendApiRequest("POST", "/ai/query", body);
+                if (response == null) {
+                    Bukkit.getScheduler().runTask(this, () ->
+                        sender.sendMessage(Component.text("AI request failed. Is the AI server running?").color(NamedTextColor.RED)));
+                    return;
+                }
+                Map<String, Object> map = parseJson(response);
+                String answer = asString(map.get("answer"));
+                String toolCmd = asString(map.get("command"));
+
+                String finalAnswer = answer != null ? answer : "No response from AI.";
+                Bukkit.getScheduler().runTask(this, () ->
+                    sender.sendMessage(Component.text("◆ ").color(NamedTextColor.AQUA)
+                        .append(Component.text("AI: ").color(NamedTextColor.GOLD))
+                        .append(Component.text(finalAnswer).color(NamedTextColor.WHITE))));
+
+                if (toolCmd != null && !toolCmd.isEmpty()) {
+                    Bukkit.getScheduler().runTask(this, () -> {
+                        sender.sendMessage(Component.text("◆ AI is running: " + toolCmd).color(NamedTextColor.GRAY));
+                        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), toolCmd);
+                    });
+                }
+            } catch (Exception e) {
+                Bukkit.getScheduler().runTask(this, () ->
+                    sender.sendMessage(Component.text("AI error: " + e.getMessage()).color(NamedTextColor.RED)));
+            }
+        });
+    }
+
+    private String buildAiContext() {
+        Runtime rt = Runtime.getRuntime();
+        long usedMB = (rt.totalMemory() - rt.freeMemory()) / 1048576;
+        long maxMB = rt.maxMemory() / 1048576;
+        double tps = getTps();
+        double mspt = getMspt();
+        long uptimeSec = (System.currentTimeMillis() - serverStartTime) / 1000;
+
+        StringBuilder sb = new StringBuilder("{");
+        sb.append("\"tps\":").append(String.format("%.1f", tps)).append(",");
+        sb.append("\"mspt\":").append(String.format("%.1f", mspt)).append(",");
+        sb.append("\"ram_used_mb\":").append(usedMB).append(",");
+        sb.append("\"ram_max_mb\":").append(maxMB).append(",");
+        sb.append("\"uptime_seconds\":").append(uptimeSec).append(",");
+        sb.append("\"online_players\":").append(Bukkit.getOnlinePlayers().size()).append(",");
+        sb.append("\"max_players\":").append(Bukkit.getMaxPlayers()).append(",");
+        sb.append("\"version\":").append(jsonString(getDescription().getVersion())).append(",");
+        sb.append("\"build\":").append(jsonString(currentBuild)).append(",");
+        sb.append("\"has_pro\":").append(serverHasPro).append(",");
+        sb.append("\"is_updating\":").append(isUpdating).append(",");
+        sb.append("\"license_active\":").append(licenseVerified && !licenseBlocked);
+        sb.append("}");
+        return sb.toString();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // GUI COMMAND
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void cmdGui(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        if (!sender.hasPermission("stratum.admin")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        Player p = (Player) sender;
+        openMainGui(p);
+    }
+
+    private void openMainGui(Player p) {
+        Inventory inv = Bukkit.createInventory(null, 54, "§8◆ Stratum Control Panel");
+        guiPages.put(p.getUniqueId(), "main");
+
+        // Row 1: Categories
+        inv.setItem(0, makeItem(Material.PLAYER_HEAD, "§bPlayer Tools", "§7Manage players and sessions"));
+        inv.setItem(1, makeItem(Material.COMPASS, "§bWorld", "§7World management & time"));
+        inv.setItem(2, makeItem(Material.CLOCK, "§bServer", "§7Server stats & performance"));
+        inv.setItem(3, makeItem(Material.REDSTONE, "§bAdmin", "§7Whitelist, restart, updates"));
+        inv.setItem(4, makeItem(Material.BEACON, "§bAI Assistant", "§7Ask the AI anything"));
+        inv.setItem(8, makeItem(Material.BARRIER, "§cClose", "§7Close the GUI"));
+
+        // Separator
+        ItemStack sep = makeItem(Material.GRAY_STAINED_GLASS_PANE, " ", null);
+        for (int i = 9; i < 18; i++) inv.setItem(i, sep);
+
+        // Player Tools (Row 3-5)
+        inv.setItem(18, makeItem(Material.DIAMOND_SWORD, "§eGamemode", "§7Click to change"));
+        inv.setItem(19, makeItem(Material.FEATHER, "§eFly", "§7Toggle flight"));
+        inv.setItem(20, makeItem(Material.SUGAR, "§eSpeed", "§7Set fly/walk speed"));
+        inv.setItem(21, makeItem(Material.GOLDEN_APPLE, "§eHeal", "§7Full heal"));
+        inv.setItem(22, makeItem(Material.COOKED_BEEF, "§eFeed", "§7Restore hunger"));
+        inv.setItem(23, makeItem(Material.ENDER_PEARL, "§eTeleport", "§7Teleport to player"));
+        inv.setItem(24, makeItem(Material.COMPARATOR, "§ePing", "§7Check your ping"));
+        inv.setItem(25, makeItem(Material.ENDER_EYE, "§eNear", "§7Find nearby players"));
+        inv.setItem(26, makeItem(Material.TRIDENT, "§eVanish", "§7Toggle vanish"));
+
+        // World Tools (Row 4)
+        inv.setItem(27, makeItem(Material.SUNFLOWER, "§eTime: Day", "§7Set world to daytime"));
+        inv.setItem(28, makeItem(Material.CLOCK, "§eSnapshot", "§7Take world snapshot"));
+
+        // Server (Row 4)
+        inv.setItem(29, makeItem(Material.REDSTONE_TORCH, "§eStats", "§7View server statistics"));
+
+        // Admin (Row 5)
+        inv.setItem(36, makeItem(Material.SHIELD, "§eWhitelist", "§7Toggle smart whitelist"));
+        inv.setItem(37, makeItem(Material.REPEATER, "§eRestart", "§7Restart the server"));
+        inv.setItem(38, makeItem(Material.ENDER_CHEST, "§eUpdate", "§7Apply server update"));
+        inv.setItem(39, makeItem(Material.ENCHANTED_BOOK, "§eAI Query", "§7Click to type a query"));
+
+        p.openInventory(inv);
+    }
+
+    private ItemStack makeItem(Material mat, String name, String lore) {
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(name);
+            if (lore != null && !lore.isEmpty()) {
+                meta.setLore(java.util.Arrays.asList(lore.split("\n")));
+            }
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    @EventHandler
+    public void onGuiClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player p)) return;
+        if (!guiPages.containsKey(p.getUniqueId())) return;
+        event.setCancelled(true);
+        ItemStack clicked = event.getCurrentItem();
+        if (clicked == null || !clicked.hasItemMeta()) return;
+        String name = clicked.getItemMeta().getDisplayName();
+        int slot = event.getSlot();
+
+        // Close
+        if (name.contains("Close") || slot == 8) { p.closeInventory(); guiPages.remove(p.getUniqueId()); return; }
+
+        // Player Tools
+        if (name.contains("Gamemode")) { p.closeInventory(); guiPages.remove(p.getUniqueId()); Bukkit.dispatchCommand(p, "stb gamemode"); p.sendMessage(Component.text("Usage: /stb gamemode <survival|creative|adventure|spectator>").color(NamedTextColor.GRAY)); }
+        else if (name.contains("Fly")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb fly"); }
+        else if (name.contains("Speed")) { p.closeInventory(); guiPages.remove(p.getUniqueId()); Bukkit.dispatchCommand(p, "stb speed"); p.sendMessage(Component.text("Usage: /stb speed <0.1-10>").color(NamedTextColor.GRAY)); }
+        else if (name.contains("Heal")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb heal"); }
+        else if (name.contains("Feed")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb feed"); }
+        else if (name.contains("Teleport")) { p.closeInventory(); guiPages.remove(p.getUniqueId()); Bukkit.dispatchCommand(p, "stb tp"); p.sendMessage(Component.text("Usage: /stb tp <player>").color(NamedTextColor.GRAY)); }
+        else if (name.contains("Ping")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb ping"); }
+        else if (name.contains("Near")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb near"); }
+        else if (name.contains("Vanish")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb vanish"); }
+
+        // World Tools
+        else if (name.contains("Day")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb time day"); }
+        else if (name.contains("Snapshot")) { p.closeInventory(); guiPages.remove(p.getUniqueId()); Bukkit.dispatchCommand(p, "stb snapshot"); }
+
+        // Server
+        else if (name.contains("Stats")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb stats"); }
+
+        // Admin
+        else if (name.contains("Whitelist")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb whitelist"); p.sendMessage(Component.text("Usage: /stb whitelist <on|off>").color(NamedTextColor.GRAY)); }
+        else if (name.contains("Restart")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb restart"); p.sendMessage(Component.text("Usage: /stb restart <now|<seconds>|cancel>").color(NamedTextColor.GRAY)); }
+        else if (name.contains("Update")) { p.closeInventory(); Bukkit.dispatchCommand(p, "stb update"); }
+
+        // AI
+        else if (name.contains("AI")) { p.closeInventory(); guiPages.remove(p.getUniqueId()); p.sendMessage(Component.text("Type: /stb ai <your question>").color(NamedTextColor.GRAY)); }
     }
 }

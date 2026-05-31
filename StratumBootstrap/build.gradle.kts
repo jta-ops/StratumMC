@@ -1,4 +1,4 @@
-version = "1.8.0"
+version = "2.1.0"
 
 dependencies {
     compileOnly(project(":paper-api"))

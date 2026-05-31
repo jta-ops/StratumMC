@@ -162,6 +162,7 @@
          }
  
 +        // CraftBukkit start
++        mc.stratum.StratumPluginInstaller.installOrUpdate(); // Stratum - auto-update Bootstrap plugin
 +        this.server.loadPlugins();
 +        this.server.enablePlugins(org.bukkit.plugin.PluginLoadOrder.STARTUP);
 +        // CraftBukkit end

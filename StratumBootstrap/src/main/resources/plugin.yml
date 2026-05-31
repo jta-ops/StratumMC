@@ -1,5 +1,5 @@
 name: StratumBootstrap
-version: '2.0.0'
+version: '2.1.0'
 main: mc.stratum.bootstrap.StratumBootstrap
 api-version: '1.21'
 load: STARTUP
@@ -9,11 +9,14 @@ website: https://stratumserver.net
 commands:
   stb:
     description: Stratum Bootstrap management
-    usage: /stb [license|version|stats|restart]
+    usage: /stb [license|version|stats|restart|ai|gui]
     permission: stratum.admin
     permission-message: ''
 
 permissions:
   stratum.admin:
     description: Full Stratum admin access
+    default: op
+  stratum.ai:
+    description: AI assistant access
     default: op
