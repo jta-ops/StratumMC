@@ -165,8 +165,8 @@ index 0000000000000000000000000000000000000000..0bcf4b1cf06268418637465cc4e9b358
 +                        enabledAddons.removeIf(m -> existingId.equals(m.id()));
 +                        final mc.stratum.addons.StratumAddon old = liveInstances.remove(existingId);
 +                        if (old != null) { try { old.onDisable(); } catch (Exception ignored) {} }
-+                        final URLClassLoader oldCl = classLoaders.remove(existingId);
-+                        if (oldCl != null) { try { oldCl.close(); } catch (Exception ignored) {} }
++                        final ClassLoader oldCl = classLoaders.remove(existingId);
++                        if (oldCl instanceof URLClassLoader) { try { ((URLClassLoader)oldCl).close(); } catch (Exception ignored) {} }
 +                    }
 +                }
 +            }
