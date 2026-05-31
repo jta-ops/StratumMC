@@ -79,8 +79,8 @@ index 0000000000000000000000000000000000000000..e54c8d9ad2585cc08fc1499cd9822b33
 +import mc.stratum.addons.AddonLoader;
 +import mc.stratum.audit.AuditLog;
 +import mc.stratum.commands.StratumCommand;
-+import mc.stratum.console.StratumBanner;
 +import mc.stratum.console.StratumStatusLine;
++import io.papermc.paper.ServerBuildInfo;
 +import mc.stratum.metrics.StratumMetricsServer;
 +import mc.stratum.tweaks.TweakLoader;
 +import mc.stratum.update.UpdateManager;
@@ -115,6 +115,7 @@ index 0000000000000000000000000000000000000000..e54c8d9ad2585cc08fc1499cd9822b33
 +    private UpdateManager     updateManager;
 +    private StratumMetricsServer metricsServer;
 +    private StratumStatusLine statusLine;
++    private boolean           commandsRegistered = false;
 +
 +    private StratumServer() {}
 +
@@ -142,8 +143,10 @@ index 0000000000000000000000000000000000000000..e54c8d9ad2585cc08fc1499cd9822b33
 +        StratumConfig.get().load(new File("stratum.yml"));
 +        LOGGER.info("[Stratum] Configuration loaded from stratum.yml");
 +
-+        // ── 3. ASCII banner ────────────────────────────────────────────────────
-+        StratumBanner.print(LOGGER);
++        // ── 3. Startup log ─────────────────────────────────────────────────────
++        final ServerBuildInfo build = ServerBuildInfo.buildInfo();
++        LOGGER.info("[Stratum] Stratum MC v{} build #{} starting.", build.minecraftVersionId(),
++                build.buildNumber().isPresent() ? build.buildNumber().getAsInt() : "DEV");
 +
 +        // ── 4. Ed25519 public key ─────────────────────────────────────────────
 +        PublicKey primaryKey = null;
@@ -226,6 +229,8 @@ index 0000000000000000000000000000000000000000..e54c8d9ad2585cc08fc1499cd9822b33
 +     * Called after Bukkit/CraftServer is fully initialised.
 +     */
 +    public void registerCommands() {
++        if (commandsRegistered) return;
++        commandsRegistered = true;
 +        if (tweakLoader == null) tweakLoader = new TweakLoader();
 +        if (addonLoader == null) addonLoader = new AddonLoader();
 +        if (updateManager == null) updateManager = new UpdateManager();
