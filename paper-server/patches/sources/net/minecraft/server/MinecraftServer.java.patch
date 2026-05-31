@@ -604,6 +604,9 @@
              this.cancelRecordingMetrics();
          }
  
++        // Stratum start - clean up Stratum before plugins disable
++        mc.stratum.StratumServer.getInstance().shutdown();
++        // Stratum end
          LOGGER.info("Stopping server");
 +        Commands.COMMAND_SENDING_POOL.shutdownNow(); // Paper - Perf: Async command map building; Shutdown and don't bother finishing
 +        // CraftBukkit start
