@@ -9,7 +9,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000001
 --- /dev/null
 +++ b/mc/stratum/marketplace/AddonMarketplaceClient.java
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,93 @@
 +package mc.stratum.marketplace;
 +
 +import mc.stratum.StratumConfig;
@@ -108,7 +108,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000002
 --- /dev/null
 +++ b/mc/stratum/snapshot/SnapshotManager.java
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,68 @@
 +package mc.stratum.snapshot;
 +
 +import java.io.*;
