@@ -9,7 +9,7 @@ new file mode 100644
 index 0000000000000000000000000000000000000000..0bcf4b1cf06268418637465cc4e9b35862a0a71a
 --- /dev/null
 +++ b/mc/stratum/addons/AddonLoader.java
-@@ -0,0 +1,349 @@
+@@ -0,0 +1,346 @@
 +package mc.stratum.addons;
 +
 +import mc.stratum.audit.AuditLog;
