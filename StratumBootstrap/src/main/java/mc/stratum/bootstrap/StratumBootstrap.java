@@ -12,6 +12,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerKickEvent;
@@ -117,6 +118,10 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
                 scheduleBackups();
                 startDashTasks();
                 checkForServerUpdate();
+                startWatchdog();
+                // flush player events every 30s
+                new BukkitRunnable() { @Override public void run() { flushPlayerEvents(); } }
+                    .runTaskTimerAsynchronously(StratumBootstrap.this, 600L, 600L);
             } catch (Exception e) {
                 getLogger().severe("License check failed: " + e.getMessage());
                 enterRestrictedMode();
@@ -624,7 +629,8 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onServerPing(ServerListPingEvent event) {
-        event.setMotd(licenseBlocked ? SUSPENDED_MOTD : ACTIVE_MOTD);
+        if (licenseBlocked) event.setMotd(SUSPENDED_MOTD);
+        // custom MOTD handled by onPingMotd at LOW priority
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -646,10 +652,14 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
             case "license":  cmdLicense(sender); break;
             case "version":  cmdVersion(sender); break;
             case "stats":    cmdStats(sender); break;
-            case "restart":  cmdRestart(sender, args); break;
+            case "restart-old": cmdRestart(sender, args); break;
             case "update":   cmdUpdate(sender); break;
-            case "dash":     cmdDash(sender, args); break;
-            default:         sendUsage(sender); break;
+            case "dash":      cmdDash(sender, args); break;
+            case "vanish":    cmdVanish(sender, args); break;
+            case "snapshot":  cmdSnapshot(sender, args); break;
+            case "restart":   cmdRestartSchedule(sender, args); break;
+            case "whitelist": cmdWhitelist(sender, args); break;
+            default:          sendUsage(sender); break;
         }
         return true;
     }
@@ -1055,4 +1065,350 @@ public class StratumBootstrap extends JavaPlugin implements Listener {
 
     private String readLicenseFromConfig() { return getConfig().getString("license-key", null); }
     private void writeLicenseToConfig(String key) { getConfig().set("license-key", key); saveConfig(); }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // VANISH SYSTEM
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private final Set<UUID> vanishedPlayers = ConcurrentHashMap.newKeySet();
+
+    public void vanish(Player player) {
+        vanishedPlayers.add(player.getUniqueId());
+        for (Player other : Bukkit.getOnlinePlayers()) {
+            if (!other.equals(player) && !vanishedPlayers.contains(other.getUniqueId())) {
+                other.hidePlayer(this, player);
+            }
+        }
+        player.sendMessage(Component.text("You are now vanished.").color(NamedTextColor.GRAY));
+        CompletableFuture.runAsync(() -> sendDashApiRequest("POST", "/vanish/set",
+            "{\"uuid\":\"" + player.getUniqueId() + "\",\"name\":\"" + player.getName() + "\",\"vanished\":true}"));
+    }
+
+    public void unvanish(Player player) {
+        vanishedPlayers.remove(player.getUniqueId());
+        for (Player other : Bukkit.getOnlinePlayers()) {
+            other.showPlayer(this, player);
+        }
+        player.sendMessage(Component.text("You are no longer vanished.").color(NamedTextColor.GREEN));
+        CompletableFuture.runAsync(() -> sendDashApiRequest("POST", "/vanish/set",
+            "{\"uuid\":\"" + player.getUniqueId() + "\",\"name\":\"" + player.getName() + "\",\"vanished\":false}"));
+    }
+
+    public boolean isVanished(UUID uuid) { return vanishedPlayers.contains(uuid); }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onJoinVanishCheck(PlayerJoinEvent event) {
+        Player joining = event.getPlayer();
+        // Hide vanished players from the joining player
+        for (UUID vid : vanishedPlayers) {
+            Player vp = Bukkit.getPlayer(vid);
+            if (vp != null && !vp.equals(joining)) joining.hidePlayer(this, vp);
+        }
+        // Hide joining player from others if they're vanished
+        if (vanishedPlayers.contains(joining.getUniqueId())) {
+            for (Player other : Bukkit.getOnlinePlayers()) {
+                if (!other.equals(joining)) other.hidePlayer(this, joining);
+            }
+            event.joinMessage(null);
+        }
+        // Log join event
+        logPlayerEvent(joining.getUniqueId().toString(), joining.getName(), "join");
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onQuitVanishCheck(PlayerQuitEvent event) {
+        Player quitting = event.getPlayer();
+        if (vanishedPlayers.contains(quitting.getUniqueId())) {
+            vanishedPlayers.remove(quitting.getUniqueId());
+            event.quitMessage(null);
+            CompletableFuture.runAsync(() -> sendDashApiRequest("POST", "/vanish/set",
+                "{\"uuid\":\"" + quitting.getUniqueId() + "\",\"name\":\"" + quitting.getName() + "\",\"vanished\":false}"));
+        }
+        logPlayerEvent(quitting.getUniqueId().toString(), quitting.getName(), "quit");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // SMART WHITELIST
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private volatile boolean whitelistEnabled = false;
+
+    public void setWhitelistEnabled(boolean enabled) {
+        whitelistEnabled = enabled;
+        if (enabled) getLogger().info("[Stratum] Smart Whitelist enabled.");
+        else getLogger().info("[Stratum] Smart Whitelist disabled.");
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onPreLogin(org.bukkit.event.player.AsyncPlayerPreLoginEvent event) {
+        if (!whitelistEnabled) return;
+        try {
+            String name = event.getName();
+            String uuid = event.getUniqueId().toString();
+            String resp = sendApiRequest("GET", "/whitelist/check?name=" + name + "&uuid=" + uuid, null);
+            if (resp == null || !resp.contains("\"allowed\":true")) {
+                event.disallow(org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result.KICK_WHITELIST,
+                        net.kyori.adventure.text.Component.text("You are not whitelisted on this server."));
+            }
+        } catch (Exception e) {
+            getLogger().warning("[Stratum] Whitelist check failed for " + event.getName() + ": " + e.getMessage());
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PERFORMANCE WATCHDOG
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private double watchdogTpsThreshold = 15.0;
+    private boolean watchdogEnabled = false;
+    private int watchdogViewDistanceNormal = 10;
+    private int watchdogViewDistanceReduced = 4;
+    private boolean watchdogReduced = false;
+
+    private void startWatchdog() {
+        watchdogEnabled = getConfig().getBoolean("watchdog.enabled", false);
+        watchdogTpsThreshold = getConfig().getDouble("watchdog.tps-threshold", 15.0);
+        watchdogViewDistanceNormal = getConfig().getInt("watchdog.view-distance-normal", 10);
+        watchdogViewDistanceReduced = getConfig().getInt("watchdog.view-distance-reduced", 4);
+        if (!watchdogEnabled) return;
+        new BukkitRunnable() {
+            @Override public void run() {
+                if (!watchdogEnabled) return;
+                double tps = Bukkit.getTPS()[0];
+                if (tps < watchdogTpsThreshold && !watchdogReduced) {
+                    watchdogReduced = true;
+                    Bukkit.getWorlds().forEach(w -> w.setViewDistance(watchdogViewDistanceReduced));
+                    getLogger().warning("[Stratum Watchdog] TPS " + String.format("%.1f", tps) + " < " + watchdogTpsThreshold + " — reduced view distance to " + watchdogViewDistanceReduced);
+                    Bukkit.broadcast(Component.text("[Stratum] Server under load — temporarily reducing view distance.").color(NamedTextColor.YELLOW));
+                } else if (tps >= watchdogTpsThreshold + 2 && watchdogReduced) {
+                    watchdogReduced = false;
+                    Bukkit.getWorlds().forEach(w -> w.setViewDistance(watchdogViewDistanceNormal));
+                    getLogger().info("[Stratum Watchdog] TPS recovered to " + String.format("%.1f", tps) + " — restored view distance to " + watchdogViewDistanceNormal);
+                }
+            }
+        }.runTaskTimer(this, 200L, 200L); // check every 10s
+        getLogger().info("[Stratum] Performance Watchdog active (threshold: " + watchdogTpsThreshold + " TPS).");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // SCHEDULED RESTARTS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private BukkitRunnable restartCountdownTask;
+    private volatile boolean restartScheduled = false;
+
+    public void scheduleRestart(int warningSeconds) {
+        if (restartScheduled) {
+            Bukkit.getScheduler().runTask(this, () ->
+                Bukkit.broadcast(Component.text("[Stratum] A restart is already scheduled.").color(NamedTextColor.YELLOW)));
+            return;
+        }
+        restartScheduled = true;
+        restartCountdownTask = new BukkitRunnable() {
+            int remaining = warningSeconds;
+            @Override public void run() {
+                if (remaining <= 0) {
+                    Bukkit.broadcast(Component.text("[Stratum] Restarting now...").color(NamedTextColor.RED).decorate(TextDecoration.BOLD));
+                    Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "stop");
+                    cancel(); return;
+                }
+                if (remaining == warningSeconds || remaining == 60 || remaining == 30 || remaining == 10 || remaining <= 5) {
+                    String msg = remaining >= 60 ? (remaining / 60) + " minute" + (remaining / 60 > 1 ? "s" : "") : remaining + " second" + (remaining > 1 ? "s" : "");
+                    Bukkit.broadcast(Component.text("[Stratum] Server restarting in " + msg + ".").color(NamedTextColor.GOLD));
+                }
+                remaining--;
+            }
+        };
+        restartCountdownTask.runTaskTimer(this, 0L, 20L);
+    }
+
+    public void cancelRestart() {
+        if (restartCountdownTask != null) restartCountdownTask.cancel();
+        restartScheduled = false;
+        Bukkit.broadcast(Component.text("[Stratum] Scheduled restart cancelled.").color(NamedTextColor.GREEN));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // CUSTOM MOTD
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private String customMotd = null;
+    private long motdLastFetch = 0;
+
+    private void refreshMotd() {
+        if (System.currentTimeMillis() - motdLastFetch < 60_000) return;
+        motdLastFetch = System.currentTimeMillis();
+        CompletableFuture.runAsync(() -> {
+            try {
+                String resp = sendApiRequest("GET", "/motd", null);
+                if (resp != null && resp.contains("\"motd\":")) {
+                    int start = resp.indexOf("\"motd\":") + 7;
+                    if (resp.charAt(start) == '"') {
+                        int end = resp.indexOf('"', start + 1);
+                        customMotd = resp.substring(start + 1, end);
+                    } else {
+                        customMotd = null;
+                    }
+                }
+            } catch (Exception ignored) {}
+        });
+    }
+
+    @EventHandler(priority = EventPriority.LOW)
+    public void onPingMotd(ServerListPingEvent event) {
+        refreshMotd();
+        if (customMotd != null && !licenseBlocked) {
+            event.setMotd(customMotd);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // WORLD SNAPSHOTS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    public void takeSnapshot(CommandSender sender, String name) {
+        sender.sendMessage(Component.text("[Stratum] Taking snapshot '" + name + "'...").color(NamedTextColor.YELLOW));
+        CompletableFuture.runAsync(() -> {
+            try {
+                File serverDir = getDataFolder().getParentFile().getParentFile();
+                File worldDir = new File(serverDir, "world");
+                if (!worldDir.exists()) {
+                    Bukkit.getScheduler().runTask(this, () -> sender.sendMessage(Component.text("[Stratum] World folder not found.").color(NamedTextColor.RED)));
+                    return;
+                }
+                File snapshotsDir = new File(serverDir, "snapshots");
+                snapshotsDir.mkdirs();
+                File zipFile = new File(snapshotsDir, name.replaceAll("[^a-zA-Z0-9_-]", "_") + "_" + System.currentTimeMillis() + ".zip");
+                zipDirectory(worldDir, zipFile);
+                long size = zipFile.length();
+                sendDashApiRequest("POST", "/snapshots/record",
+                    "{\"name\":\"" + name + "\",\"world\":\"world\",\"size_bytes\":" + size + "}");
+                Bukkit.getScheduler().runTask(this, () ->
+                    sender.sendMessage(Component.text("[Stratum] Snapshot '" + name + "' saved (" + (size / 1024 / 1024) + " MB).").color(NamedTextColor.GREEN)));
+            } catch (Exception e) {
+                Bukkit.getScheduler().runTask(this, () ->
+                    sender.sendMessage(Component.text("[Stratum] Snapshot failed: " + e.getMessage()).color(NamedTextColor.RED)));
+            }
+        });
+    }
+
+    public void listSnapshots(CommandSender sender) {
+        File snapshotsDir = new File(getDataFolder().getParentFile().getParentFile(), "snapshots");
+        if (!snapshotsDir.exists() || snapshotsDir.listFiles() == null) {
+            sender.sendMessage(Component.text("[Stratum] No snapshots found.").color(NamedTextColor.GRAY)); return;
+        }
+        File[] files = snapshotsDir.listFiles((d, n) -> n.endsWith(".zip"));
+        if (files == null || files.length == 0) { sender.sendMessage(Component.text("[Stratum] No snapshots found.").color(NamedTextColor.GRAY)); return; }
+        Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        sender.sendMessage(Component.text("[Stratum] Snapshots:").color(NamedTextColor.GOLD));
+        for (File f : files) {
+            sender.sendMessage(Component.text("  " + f.getName() + " (" + (f.length() / 1024 / 1024) + " MB)").color(NamedTextColor.GRAY));
+        }
+    }
+
+    private void zipDirectory(File dir, File output) throws IOException {
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(new java.io.FileOutputStream(output))) {
+            zipDir(dir, dir.getName(), zos);
+        }
+    }
+
+    private void zipDir(File dir, String prefix, java.util.zip.ZipOutputStream zos) throws IOException {
+        File[] files = dir.listFiles();
+        if (files == null) return;
+        for (File f : files) {
+            if (f.isDirectory()) { zipDir(f, prefix + "/" + f.getName(), zos); continue; }
+            try (InputStream in = new FileInputStream(f)) {
+                zos.putNextEntry(new java.util.zip.ZipEntry(prefix + "/" + f.getName()));
+                byte[] buf = new byte[8192]; int len;
+                while ((len = in.read(buf)) > 0) zos.write(buf, 0, len);
+                zos.closeEntry();
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PLAYER EVENT LOGGING
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private final List<String[]> playerEventBatch = Collections.synchronizedList(new ArrayList<>());
+
+    private void logPlayerEvent(String uuid, String name, String event) {
+        String ts = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'").format(new java.util.Date());
+        playerEventBatch.add(new String[]{uuid, name, event, ts});
+        if (playerEventBatch.size() >= 10) flushPlayerEvents();
+    }
+
+    private void flushPlayerEvents() {
+        List<String[]> batch;
+        synchronized (playerEventBatch) {
+            batch = new ArrayList<>(playerEventBatch);
+            playerEventBatch.clear();
+        }
+        if (batch.isEmpty()) return;
+        StringBuilder sb = new StringBuilder("{\"fingerprint\":\"").append(fingerprint).append("\",\"events\":[");
+        for (int i = 0; i < batch.size(); i++) {
+            String[] e = batch.get(i);
+            if (i > 0) sb.append(',');
+            sb.append("{\"uuid\":\"").append(e[0]).append("\",\"name\":\"").append(e[1])
+              .append("\",\"event\":\"").append(e[2]).append("\",\"ts\":\"").append(e[3]).append("\"}");
+        }
+        sb.append("]}");
+        final String body = sb.toString();
+        CompletableFuture.runAsync(() -> sendDashApiRequest("POST", "/player-events/push", body));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // STB COMMAND ADDITIONS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    private void cmdVanish(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player)) { sender.sendMessage(Component.text("Players only.").color(NamedTextColor.RED)); return; }
+        if (!sender.hasPermission("stratum.vanish")) { sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return; }
+        Player player = (Player) sender;
+        if (isVanished(player.getUniqueId())) unvanish(player);
+        else vanish(player);
+    }
+
+    private void cmdSnapshot(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.snapshot") && !(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
+            sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return;
+        }
+        if (args.length < 2) { sender.sendMessage(Component.text("Usage: /stb snapshot <save|list> [name]").color(NamedTextColor.YELLOW)); return; }
+        switch (args[1].toLowerCase()) {
+            case "save" -> takeSnapshot(sender, args.length > 2 ? args[2] : "snapshot");
+            case "list" -> listSnapshots(sender);
+            default -> sender.sendMessage(Component.text("Usage: /stb snapshot <save|list> [name]").color(NamedTextColor.YELLOW));
+        }
+    }
+
+    private void cmdRestartSchedule(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.restart") && !(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
+            sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("Usage: /stb restart <now|<seconds>|cancel>").color(NamedTextColor.YELLOW)); return;
+        }
+        switch (args[1].toLowerCase()) {
+            case "now" -> scheduleRestart(10);
+            case "cancel" -> cancelRestart();
+            default -> {
+                try { scheduleRestart(Integer.parseInt(args[1])); }
+                catch (NumberFormatException e) { sender.sendMessage(Component.text("Invalid seconds.").color(NamedTextColor.RED)); }
+            }
+        }
+    }
+
+    private void cmdWhitelist(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("stratum.whitelist") && !(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
+            sender.sendMessage(Component.text("No permission.").color(NamedTextColor.RED)); return;
+        }
+        if (args.length < 2) {
+            sender.sendMessage(Component.text("Usage: /stb whitelist <on|off>").color(NamedTextColor.YELLOW)); return;
+        }
+        switch (args[1].toLowerCase()) {
+            case "on"  -> { setWhitelistEnabled(true);  sender.sendMessage(Component.text("Smart Whitelist enabled.").color(NamedTextColor.GREEN)); }
+            case "off" -> { setWhitelistEnabled(false); sender.sendMessage(Component.text("Smart Whitelist disabled.").color(NamedTextColor.YELLOW)); }
+            default    -> sender.sendMessage(Component.text("Usage: /stb whitelist <on|off>").color(NamedTextColor.YELLOW));
+        }
+    }
 }
