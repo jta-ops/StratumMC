@@ -50,6 +50,19 @@ CI runs automatically on every push to `main` and `dev`.
 - Stratum-specific code: `mc.stratum.*` packages
 - No Mojang code in the repo — patches only
 
+## Public API compatibility
+
+- Treat `paper-api` signatures and behavior as compatibility-sensitive.
+- Prefer additive changes; avoid changing existing method contracts unless there is a documented deprecation path.
+- When replacing legacy APIs, keep `@Deprecated` entries with clear migration targets where possible.
+
+## Nullability conventions
+
+- Follow package-level nullness defaults (`@NullMarked`) where present.
+- Use `@Nullable` for intentionally nullable API points.
+- Use `@UndefinedNullability` only for legacy or implementation-defined behavior that cannot guarantee a stable null contract yet.
+- Avoid tightening nullability in public APIs without a compatibility/deprecation review.
+
 ## Submitting a PR
 
 1. Fork the repo

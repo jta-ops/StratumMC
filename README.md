@@ -25,6 +25,17 @@
 curl stratumserver.net/cli | bash
 ```
 
+> [!WARNING]
+> `curl ... | bash` executes a remote script immediately. Only run this from a source you trust.
+>
+> For safer installs, download first, review, then execute:
+> ```bash
+> curl -fsSL https://stratumserver.net/cli -o stratum-install.sh
+> less stratum-install.sh
+> bash stratum-install.sh
+> ```
+> For production environments, prefer version-pinned downloads and verify any published checksums/signatures before running installer scripts.
+
 ---
 
 ## What is Stratum?
