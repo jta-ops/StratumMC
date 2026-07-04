@@ -102,7 +102,7 @@ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThre
                     }
                     // Paper end
                 } else {
-                    logger.log(Level.SEVERE, "--- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH  - " + Bukkit.getServer().getVersion() + " ---");
+                    logger.log(Level.SEVERE, "--- DO NOT REPORT THIS TO STRATUM - THIS IS NOT A BUG OR A CRASH  - " + Bukkit.getServer().getVersion() + " ---");
                     logger.log(Level.SEVERE, "The server has not responded for " + (currentTime - lastTick) / 1000 + " seconds! Creating thread dump");
                 }
                 // Paper end - Different message for short timeout
@@ -119,8 +119,9 @@ public class WatchdogThread extends ca.spottedleaf.moonrise.common.util.TickThre
                     for (ThreadInfo thread : threads) {
                         WatchdogThread.dumpThread(thread, logger);
                     }
+                    mc.stratum.report.CrashReporter.report("Watchdog: server unresponsive for " + (currentTime - this.lastTick) / 1000 + "s"); // Stratum - crash reports
                 } else {
-                    logger.log(Level.SEVERE, "--- DO NOT REPORT THIS TO PAPER - THIS IS NOT A BUG OR A CRASH ---");
+                    logger.log(Level.SEVERE, "--- DO NOT REPORT THIS TO STRATUM - THIS IS NOT A BUG OR A CRASH ---");
                 }
 
                 logger.log(Level.SEVERE, "------------------------------");
