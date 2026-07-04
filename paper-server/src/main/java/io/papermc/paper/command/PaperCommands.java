@@ -22,11 +22,13 @@ public final class PaperCommands {
     private static final Map<String, Command> COMMANDS = new HashMap<>();
 
     public static void registerCommands(final MinecraftServer server) {
-        COMMANDS.put("paper", new PaperCommand("paper"));
+        final PaperCommand stratumCommand = new PaperCommand("stratum");
+        stratumCommand.setAliases(List.of("paper")); // Stratum - keep /paper as a compatibility alias
+        COMMANDS.put("stratum", stratumCommand);
         COMMANDS.put("mspt", new MSPTCommand("mspt"));
 
         COMMANDS.forEach((s, command) -> {
-            server.server.getCommandMap().register(s, "Paper", command);
+            server.server.getCommandMap().register(s, "Stratum", command);
         });
     }
 
@@ -40,7 +42,7 @@ public final class PaperCommands {
         io.papermc.paper.command.brigadier.PaperCommands.INSTANCE.registerWithFlagsInternal(
             null,
             namespace,
-            "Paper",
+            "Stratum",
             node,
             description,
             aliases,

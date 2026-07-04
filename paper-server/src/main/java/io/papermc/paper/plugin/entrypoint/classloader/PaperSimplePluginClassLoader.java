@@ -112,7 +112,7 @@ public class PaperSimplePluginClassLoader extends URLClassLoader {
 
     @Override
     public String toString() {
-        return "PaperSimplePluginClassLoader{" +
+        return "StratumSimplePluginClassLoader{" +
             "configuration=" + this.configuration +
             ", source=" + this.source +
             ", jarManifest=" + this.jarManifest +

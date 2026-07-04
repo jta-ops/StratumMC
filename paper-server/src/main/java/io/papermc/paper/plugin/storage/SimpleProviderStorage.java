@@ -71,7 +71,7 @@ public abstract class SimpleProviderStorage<T> implements ProviderStorage<T> {
         for (String logMessage : logMessages) {
             LOGGER.error("  {}", logMessage);
         }
-        LOGGER.error("Please report this to the plugin authors of the first plugin of each loop or join the PaperMC Discord server for further help.");
+        LOGGER.error("Please report this to the plugin authors of the first plugin of each loop or check https://stratumserver.net for further help.");
         LOGGER.error("If you would like to still load these plugins, acknowledging that there may be unexpected plugin loading issues, run the server with -Dpaper.useLegacyPluginLoading=true");
 
         if (this.throwOnCycle()) {

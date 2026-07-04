@@ -91,50 +91,53 @@ import static io.leangen.geantyref.GenericTypeReflector.erase;
 public class PaperConfigurations extends Configurations<GlobalConfiguration, WorldConfiguration> {
 
     private static final Logger LOGGER = LogUtils.getClassLogger();
-    static final String GLOBAL_CONFIG_FILE_NAME = "paper-global.yml";
-    static final String WORLD_DEFAULTS_CONFIG_FILE_NAME = "paper-world-defaults.yml";
-    static final String WORLD_CONFIG_FILE_NAME = "paper-world.yml";
+    static final String GLOBAL_CONFIG_FILE_NAME = "stratum-global.yml";
+    static final String WORLD_DEFAULTS_CONFIG_FILE_NAME = "stratum-world-defaults.yml";
+    static final String WORLD_CONFIG_FILE_NAME = "stratum-world.yml";
+    // Stratum start - migrate legacy config file names
+    static final String LEGACY_GLOBAL_CONFIG_FILE_NAME = "paper-global.yml";
+    static final String LEGACY_WORLD_DEFAULTS_CONFIG_FILE_NAME = "paper-world-defaults.yml";
+    static final String LEGACY_WORLD_CONFIG_FILE_NAME = "paper-world.yml";
+    // Stratum end - migrate legacy config file names
     public static final String CONFIG_DIR = "config";
     private static final String BACKUP_DIR ="legacy-backup";
 
     private static final String GLOBAL_HEADER = String.format("""
-            This is the global configuration file for Paper.
+            This is the global configuration file for Stratum.
             As you can see, there's a lot to configure. Some options may impact gameplay, so use
             with caution, and make sure you know what each option does before configuring.
 
-            If you need help with the configuration or have any questions related to Paper,
-            join us in our Discord or check the docs page.
+            If you need help with the configuration or have any questions related to Stratum,
+            check the website or the docs page.
 
             The world configuration options have been moved inside
             their respective world folder. The files are named %s
 
-            File Reference: https://docs.papermc.io/paper/reference/global-configuration/
-            Docs: https://docs.papermc.io/
-            Discord: https://discord.gg/papermc
-            Website: https://papermc.io/""", WORLD_CONFIG_FILE_NAME);
+            Docs: https://stratumserver.net/docs
+            Downloads: https://stratumserver.net/downloads
+            Website: https://stratumserver.net/""", WORLD_CONFIG_FILE_NAME);
 
     private static final String WORLD_DEFAULTS_HEADER = """
-            This is the world defaults configuration file for Paper.
+            This is the world defaults configuration file for Stratum.
             As you can see, there's a lot to configure. Some options may impact gameplay, so use
             with caution, and make sure you know what each option does before configuring.
 
-            If you need help with the configuration or have any questions related to Paper,
-            join us in our Discord or check the docs page.
+            If you need help with the configuration or have any questions related to Stratum,
+            check the website or the docs page.
 
             Configuration options here apply to all worlds, unless you specify overrides inside
             the world-specific config file inside each world folder.
 
-            File Reference: https://docs.papermc.io/paper/reference/world-configuration/
-            Docs: https://docs.papermc.io/
-            Discord: https://discord.gg/papermc
-            Website: https://papermc.io/""";
+            Docs: https://stratumserver.net/docs
+            Downloads: https://stratumserver.net/downloads
+            Website: https://stratumserver.net/""";
 
     private static final Function<ContextMap, String> WORLD_HEADER = map -> String.format("""
-        This is a world configuration file for Paper.
+        This is a world configuration file for Stratum.
         This file may start empty but can be filled with settings to override ones in the %s/%s
-        
-        For more information, see https://docs.papermc.io/paper/reference/configuration/#per-world-configuration
-        
+
+        For more information, see https://stratumserver.net/docs
+
         World: %s""",
         PaperConfigurations.CONFIG_DIR,
         PaperConfigurations.WORLD_DEFAULTS_CONFIG_FILE_NAME,
@@ -145,8 +148,8 @@ public class PaperConfigurations extends Configurations<GlobalConfiguration, Wor
         The global and world default configuration files have moved to %s
         and the world-specific configuration file has been moved inside
         the respective world folder.
-        
-        See https://docs.papermc.io/paper/configuration for more information.
+
+        See https://stratumserver.net/docs for more information.
         """;
 
     @VisibleForTesting
@@ -162,6 +165,18 @@ public class PaperConfigurations extends Configurations<GlobalConfiguration, Wor
     public PaperConfigurations(final Path globalFolder) {
         super(globalFolder, GlobalConfiguration.class, WorldConfiguration.class, GLOBAL_CONFIG_FILE_NAME, WORLD_DEFAULTS_CONFIG_FILE_NAME, WORLD_CONFIG_FILE_NAME);
     }
+
+    // Stratum start - migrate legacy config file names
+    @Override
+    protected @Nullable String legacyFileName(final String fileName) {
+        return switch (fileName) {
+            case GLOBAL_CONFIG_FILE_NAME -> LEGACY_GLOBAL_CONFIG_FILE_NAME;
+            case WORLD_DEFAULTS_CONFIG_FILE_NAME -> LEGACY_WORLD_DEFAULTS_CONFIG_FILE_NAME;
+            case WORLD_CONFIG_FILE_NAME -> LEGACY_WORLD_CONFIG_FILE_NAME;
+            default -> null;
+        };
+    }
+    // Stratum end - migrate legacy config file names
 
     @Override
     protected int globalConfigVersion() {
@@ -367,17 +382,17 @@ public class PaperConfigurations extends Configurations<GlobalConfiguration, Wor
             final String legacyFileName = legacyConfig.getFileName().toString();
             try {
                 if (Files.exists(configDir) && !Files.isDirectory(configDir)) {
-                    throw new RuntimeException("Paper needs to create a '" + configDir.toAbsolutePath() + "' folder. You already have a non-directory named '" + configDir.toAbsolutePath() + "'. Please remove it and restart the server.");
+                    throw new RuntimeException("Stratum needs to create a '" + configDir.toAbsolutePath() + "' folder. You already have a non-directory named '" + configDir.toAbsolutePath() + "'. Please remove it and restart the server.");
                 }
                 final Path backupDir = configDir.resolve(BACKUP_DIR);
                 if (Files.exists(backupDir) && !Files.isDirectory(backupDir)) {
-                    throw new RuntimeException("Paper needs to create a '" + BACKUP_DIR + "' directory in the '" + configDir.toAbsolutePath() + "' folder. You already have a non-directory named '" + BACKUP_DIR + "'. Please remove it and restart the server.");
+                    throw new RuntimeException("Stratum needs to create a '" + BACKUP_DIR + "' directory in the '" + configDir.toAbsolutePath() + "' folder. You already have a non-directory named '" + BACKUP_DIR + "'. Please remove it and restart the server.");
                 }
                 createDirectoriesSymlinkAware(backupDir);
                 final String backupFileName = legacyFileName + ".old";
                 final Path legacyConfigBackup = backupDir.resolve(backupFileName);
                 if (Files.exists(legacyConfigBackup) && !Files.isRegularFile(legacyConfigBackup)) {
-                    throw new RuntimeException("Paper needs to create a '" + backupFileName + "' file in the '" + backupDir.toAbsolutePath() + "' folder. You already have a non-file named '" + backupFileName + "'. Please remove it and restart the server.");
+                    throw new RuntimeException("Stratum needs to create a '" + backupFileName + "' file in the '" + backupDir.toAbsolutePath() + "' folder. You already have a non-file named '" + backupFileName + "'. Please remove it and restart the server.");
                 }
                 Files.move(legacyConfig.toRealPath(), legacyConfigBackup, StandardCopyOption.REPLACE_EXISTING); // make backup
                 if (Files.isSymbolicLink(legacyConfig)) {

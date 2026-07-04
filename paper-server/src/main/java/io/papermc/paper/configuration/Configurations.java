@@ -112,13 +112,36 @@ public abstract class Configurations<G, W> {
             loader.save(node);
         } catch (ConfigurateException ex) {
             if (ex.getCause() instanceof AccessDeniedException) {
-                LOGGER.warn("Could not save {}: Paper could not persist the full set of configuration settings in the configuration file. Any setting missing from the configuration file will be set with its default value in memory. Admins should make sure to review the configuration documentation at https://docs.papermc.io/paper/configuration for more details.", filename, ex);
+                LOGGER.warn("Could not save {}: Stratum could not persist the full set of configuration settings in the configuration file. Any setting missing from the configuration file will be set with its default value in memory. Admins should make sure to review the configuration documentation at https://stratumserver.net/docs for more details.", filename, ex);
             } else throw ex;
         }
     }
 
+    // Stratum start - migrate legacy config file names
+    protected @Nullable String legacyFileName(final String fileName) {
+        return null;
+    }
+
+    protected final void migrateLegacyFile(final Path file, final String fileName) {
+        final @Nullable String legacyName = this.legacyFileName(fileName);
+        if (legacyName == null || Files.exists(file)) {
+            return;
+        }
+        final Path legacy = file.resolveSibling(legacyName);
+        if (Files.exists(legacy)) {
+            try {
+                Files.move(legacy, file);
+                LOGGER.info("Migrated legacy configuration file {} to {}", legacy, file);
+            } catch (final IOException e) {
+                LOGGER.error("Failed to migrate legacy configuration file {} to {}", legacy, file, e);
+            }
+        }
+    }
+    // Stratum end - migrate legacy config file names
+
     protected G initializeGlobalConfiguration(final RegistryAccess registryAccess, final CheckedFunction<ConfigurationNode, G, SerializationException> creator) throws ConfigurateException {
         final Path configFile = this.globalFolder.resolve(this.globalConfigFileName);
+        this.migrateLegacyFile(configFile, this.globalConfigFileName); // Stratum - migrate legacy config file names
         final YamlConfigurationLoader loader = this.createGlobalLoaderBuilder(registryAccess)
             .defaultOptions(this.applyObjectMapperFactory(this.createGlobalObjectMapperFactoryBuilder().build()))
             .path(configFile)
@@ -163,6 +186,7 @@ public abstract class Configurations<G, W> {
             .put(FIRST_DEFAULT)
             .build();
         final Path configFile = this.globalFolder.resolve(this.defaultWorldConfigFileName);
+        this.migrateLegacyFile(configFile, this.defaultWorldConfigFileName); // Stratum - migrate legacy config file names
         final DefaultWorldLoader result = this.createDefaultWorldLoader(false, contextMap, configFile);
         final YamlConfigurationLoader loader = result.loader();
         final ConfigurationNode node = loader.load();
@@ -217,6 +241,7 @@ public abstract class Configurations<G, W> {
         boolean newFile = false;
         final Path dir = contextMap.require(WORLD_DIRECTORY);
         final Path worldConfigFile = dir.resolve(this.worldConfigFileName);
+        this.migrateLegacyFile(worldConfigFile, this.worldConfigFileName); // Stratum - migrate legacy config file names
         if (Files.notExists(worldConfigFile)) {
             PaperConfigurations.createDirectoriesSymlinkAware(dir);
             Files.createFile(worldConfigFile); // create empty file as template

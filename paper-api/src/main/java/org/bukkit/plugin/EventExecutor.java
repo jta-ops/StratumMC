@@ -25,7 +25,7 @@ public interface EventExecutor {
         if (m.getReturnType() != Void.TYPE) {
             final JavaPlugin plugin = JavaPlugin.getProvidingPlugin(m.getDeclaringClass());
             org.bukkit.Bukkit.getLogger().warning("@EventHandler method " + m.getDeclaringClass().getName() + (Modifier.isStatic(m.getModifiers()) ? '.' : '#') + m.getName()
-                + " returns non-void type " + m.getReturnType().getName() + ". This is unsupported behavior and will no longer work in a future version of Paper."
+                + " returns non-void type " + m.getReturnType().getName() + ". This is unsupported behavior and will no longer work in a future version of Stratum."
                 + " This should be reported to the developers of " + plugin.getPluginMeta().getDisplayName() + " (" + String.join(",", plugin.getPluginMeta().getAuthors()) + ')');
         }
         if (!m.trySetAccessible()) {

@@ -195,7 +195,7 @@ public class PaperPluginsCommand {
         sender.sendMessage(infoMessage);
 
         if (!paperPlugins.isEmpty()) {
-            sender.sendMessage(header("Paper Plugins", 0x0288D1, sizePaperPlugins, hasAllPluginTypes));
+            sender.sendMessage(header("Stratum Plugins", 0x0288D1, sizePaperPlugins, hasAllPluginTypes));
         }
 
         for (final Component component : formatProviders(paperPlugins)) {

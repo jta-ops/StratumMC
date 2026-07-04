@@ -55,7 +55,7 @@
 +
 +    // Paper start - Add onboarding message for initial server start
 +    private JComponent buildOnboardingPanel() {
-+        String onboardingLink = "https://docs.papermc.io/paper/next-steps";
++        String onboardingLink = "https://stratumserver.net/docs";
 +        JPanel jPanel = new JPanel();
 +
 +        javax.swing.JLabel jLabel = new javax.swing.JLabel("If you need help setting up your server you can visit:");

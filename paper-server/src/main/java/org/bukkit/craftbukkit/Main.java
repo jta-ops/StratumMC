@@ -115,13 +115,13 @@ public class Main {
                         .defaultsTo(new File("spigot.yml"))
                         .describedAs("Yml file");
 
-                this.acceptsAll(asList("paper-dir", "paper-settings-directory"), "Directory for Paper settings")
+                this.acceptsAll(asList("stratum-dir", "stratum-settings-directory", "paper-dir", "paper-settings-directory"), "Directory for Stratum settings")
                         .withRequiredArg()
                         .ofType(File.class)
                         .defaultsTo(new File(io.papermc.paper.configuration.PaperConfigurations.CONFIG_DIR))
                         .describedAs("Config directory");
 
-                this.acceptsAll(asList("paper", "paper-settings"), "File for Paper settings")
+                this.acceptsAll(asList("stratum", "stratum-settings", "paper", "paper-settings"), "File for Stratum settings")
                         .withRequiredArg()
                         .ofType(File.class)
                         .defaultsTo(new File("paper.yml"))
@@ -172,7 +172,7 @@ public class Main {
             }
 
             // Paper start - Improve java version check
-            boolean skip = Boolean.getBoolean("Paper.IgnoreJavaVersion");
+            boolean skip = Boolean.getBoolean("Stratum.IgnoreJavaVersion") || Boolean.getBoolean("Paper.IgnoreJavaVersion");
             String javaVersionName = System.getProperty("java.version");
             // J2SE SDK/JRE Version String Naming Convention
             boolean isPreRelease = javaVersionName.contains("-");
@@ -198,7 +198,7 @@ public class Main {
                     System.setProperty(net.minecrell.terminalconsole.TerminalConsoleAppender.JLINE_OVERRIDE_PROPERTY, "false"); // Paper
                 }
 
-                System.setProperty("library.jansi.version", "Paper"); // Paper - set meaningless jansi version to prevent git builds from crashing on Windows
+                System.setProperty("library.jansi.version", "Stratum"); // Paper - set meaningless jansi version to prevent git builds from crashing on Windows
                 System.setProperty("jdk.console", "java.base"); // Paper - revert default console provider back to java.base so we can have our own jline
 
                 io.papermc.paper.PaperBootstrap.boot(options);

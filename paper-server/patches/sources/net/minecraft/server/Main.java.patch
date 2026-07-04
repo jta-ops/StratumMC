@@ -41,7 +41,7 @@
              settings.forceSave();
 +            // Paper start
 +            if (options.has("forceUpgrade") || options.has("recreateRegionFiles")) {
-+                LOGGER.error("World upgrade and region file recreation are not yet implemented in Paper 26.1.");
++                LOGGER.error("World upgrade and region file recreation are not yet implemented in Stratum 26.1.");
 +                return;
 +            }
 +            // Paper end
@@ -75,7 +75,7 @@
 +            // Paper start - eula system property
 +            boolean eulaAgreed = Boolean.getBoolean("com.mojang.eula.agree");
 +            if (eulaAgreed) {
-+                LOGGER.warn("You have used the Paper command line EULA agreement flag.");
++                LOGGER.warn("You have used the Stratum command line EULA agreement flag.");
 +                LOGGER.warn("By using this setting you are indicating your agreement to Mojang's EULA (https://aka.ms/MinecraftEULA).");
 +                LOGGER.warn("If you do not agree to the above EULA please stop your server and remove this flag immediately.");
 +            } else if (!eula.hasAgreedToEULA()) {
@@ -92,7 +92,7 @@
 +            if (awtException != null) {
 +                LOGGER.error("You are using a headless JRE distribution.");
 +                LOGGER.error("This distribution is missing certain graphic libraries that the Minecraft server needs to function.");
-+                LOGGER.error("For instructions on how to install the non-headless JRE, see https://docs.papermc.io/misc/java-install");
++                LOGGER.error("For instructions on how to install the non-headless JRE, see https://stratumserver.net/docs");
 +                LOGGER.error("");
 +                LOGGER.error(awtException);
 +                return;
@@ -274,7 +274,7 @@
      ) {
 -        LOGGER.info("Forcing world upgrade!");
 +        throw new UnsupportedOperationException(
-+            "World upgrade and region file recreation are not yet implemented in Paper 26.1."
++            "World upgrade and region file recreation are not yet implemented in Stratum 26.1."
 +        );
 +        /*
 +        LOGGER.info("Forcing world upgrade! {}", storageSource.getLevelId()); // CraftBukkit

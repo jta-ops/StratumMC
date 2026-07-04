@@ -23,8 +23,23 @@ import java.util.jar.JarFile;
 public abstract class PluginFileType<T, C extends PluginMeta> {
 
     public static final String PAPER_PLUGIN_YML = "paper-plugin.yml";
+    public static final String STRATUM_PLUGIN_YML = "stratum-plugin.yml"; // Stratum - stratum-plugin.yml support
     private static final List<String> CONFIG_TYPES = new ArrayList<>();
 
+    // Stratum start - stratum-plugin.yml support
+    public static final PluginFileType<PaperPluginParent, PaperPluginMeta> STRATUM = new PluginFileType<>(STRATUM_PLUGIN_YML, PaperPluginParent.FACTORY) {
+        @Override
+        protected void register(EntrypointHandler entrypointHandler, PaperPluginParent parent) {
+            PaperPluginParent.PaperBootstrapProvider bootstrapPluginProvider = null;
+            if (parent.shouldCreateBootstrap()) {
+                bootstrapPluginProvider = parent.createBootstrapProvider();
+                entrypointHandler.register(Entrypoint.BOOTSTRAPPER, bootstrapPluginProvider);
+            }
+
+            entrypointHandler.register(Entrypoint.PLUGIN, parent.createPluginProvider(bootstrapPluginProvider));
+        }
+    };
+    // Stratum end - stratum-plugin.yml support
     public static final PluginFileType<PaperPluginParent, PaperPluginMeta> PAPER = new PluginFileType<>(PAPER_PLUGIN_YML, PaperPluginParent.FACTORY) {
         @Override
         protected void register(EntrypointHandler entrypointHandler, PaperPluginParent parent) {
@@ -44,7 +59,7 @@ public abstract class PluginFileType<T, C extends PluginMeta> {
         }
     };
 
-    private static final List<PluginFileType<?, ?>> VALUES = List.of(PAPER, SPIGOT);
+    private static final List<PluginFileType<?, ?>> VALUES = List.of(STRATUM, PAPER, SPIGOT); // Stratum - stratum-plugin.yml support (checked first)
 
     private final String config;
     private final PluginTypeFactory<T, C> factory;

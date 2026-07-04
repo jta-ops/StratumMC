@@ -99,7 +99,7 @@ class LoadOrderTree {
             }
         }
 
-        LOGGER.error("Please report this to the plugin authors of the first plugin of each loop or join the PaperMC Discord server for further help.");
+        LOGGER.error("Please report this to the plugin authors of the first plugin of each loop or check https://stratumserver.net for further help.");
         LOGGER.error("=================================");
     }
 

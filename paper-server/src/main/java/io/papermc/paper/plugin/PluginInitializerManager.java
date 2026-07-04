@@ -127,9 +127,9 @@ public class PluginInitializerManager {
         LOGGER.info("Initialized {} plugin{}", total, total == 1 ? "" : "s");
         if (!paperPluginNames.isEmpty()) {
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.info("Paper plugins ({}):\n - {}", paperPluginNames.size(), String.join("\n - ", paperPluginNames));
+                LOGGER.info("Stratum plugins ({}):\n - {}", paperPluginNames.size(), String.join("\n - ", paperPluginNames));
             } else {
-                LOGGER.info("Paper plugins ({}):\n - {}", paperPluginNames.size(), String.join(", ", paperPluginNames));
+                LOGGER.info("Stratum plugins ({}):\n - {}", paperPluginNames.size(), String.join(", ", paperPluginNames));
             }
         }
         if (!legacyPluginNames.isEmpty()) {
@@ -161,8 +161,8 @@ public class PluginInitializerManager {
 
         if (hasPaperPlugin) {
             LOGGER.warn("======== WARNING ========");
-            LOGGER.warn("You are reloading while having Paper plugins installed on your server.");
-            LOGGER.warn("Paper plugins do NOT support being reloaded. This will cause some unexpected issues.");
+            LOGGER.warn("You are reloading while having Stratum plugins installed on your server.");
+            LOGGER.warn("Stratum plugins do NOT support being reloaded. This will cause some unexpected issues.");
             LOGGER.warn("=========================");
         }
     }

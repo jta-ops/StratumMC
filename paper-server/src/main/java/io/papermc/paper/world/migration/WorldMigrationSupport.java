@@ -28,7 +28,8 @@ import org.slf4j.Logger;
 final class WorldMigrationSupport {
     private static final Logger LOGGER = LogUtils.getClassLogger();
     static final List<String> DIMENSION_DIRECTORIES = List.of("region", "entities", "poi");
-    static final String PAPER_WORLD_CONFIG = "paper-world.yml";
+    static final String PAPER_WORLD_CONFIG = "stratum-world.yml"; // Stratum - stratum-world.yml
+    static final String LEGACY_PAPER_WORLD_CONFIG = "paper-world.yml"; // Stratum - migrate legacy config file names
     static final String LEGACY_UID_FILE_NAME = "uid.dat";
 
     private WorldMigrationSupport() {
@@ -68,7 +69,10 @@ final class WorldMigrationSupport {
     }
 
     static void migratePaperWorldConfig(final Path sourceRoot, final Path targetDimensionPath) throws IOException {
-        final Path source = sourceRoot.resolve(PAPER_WORLD_CONFIG);
+        Path source = sourceRoot.resolve(PAPER_WORLD_CONFIG);
+        if (!Files.isRegularFile(source)) {
+            source = sourceRoot.resolve(LEGACY_PAPER_WORLD_CONFIG); // Stratum - migrate legacy config file names
+        }
         if (!Files.isRegularFile(source)) {
             return;
         }
@@ -79,7 +83,7 @@ final class WorldMigrationSupport {
         }
 
         Files.createDirectories(target.getParent());
-        LOGGER.info("Migrating Paper world config from {} to {}", source, target);
+        LOGGER.info("Migrating Stratum world config from {} to {}", source, target);
         Files.move(source, target);
     }
 

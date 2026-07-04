@@ -327,8 +327,8 @@ index 6d506004583b2415ab356e34e2f8d6ac0e39cca2..474b7f06223514d95bad3d91356dfaa5
              }
              // Paper end - Warn people with console access that HAProxy is in use.
 +            // Paper start - Use Velocity cipher
-+            ServerConnectionListener.LOGGER.info("Paper: Using " + com.velocitypowered.natives.util.Natives.compress.getLoadedVariant() + " compression from Velocity.");
-+            ServerConnectionListener.LOGGER.info("Paper: Using " + com.velocitypowered.natives.util.Natives.cipher.getLoadedVariant() + " cipher from Velocity.");
++            ServerConnectionListener.LOGGER.info("Stratum: Using " + com.velocitypowered.natives.util.Natives.compress.getLoadedVariant() + " compression from Velocity.");
++            ServerConnectionListener.LOGGER.info("Stratum: Using " + com.velocitypowered.natives.util.Natives.cipher.getLoadedVariant() + " cipher from Velocity.");
 +            // Paper end - Use Velocity cipher
              this.channels
                  .add(

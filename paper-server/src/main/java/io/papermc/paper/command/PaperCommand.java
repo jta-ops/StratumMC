@@ -71,8 +71,8 @@ public final class PaperCommand extends Command {
 
     public PaperCommand(final String name) {
         super(name);
-        this.description = "Paper related commands";
-        this.usageMessage = "/paper [" + String.join(" | ", SUBCOMMANDS.keySet()) + "]";
+        this.description = "Stratum related commands";
+        this.usageMessage = "/" + name + " [" + String.join(" | ", SUBCOMMANDS.keySet()) + "]";
         final List<String> permissions = new ArrayList<>();
         permissions.add("bukkit.command.paper");
         permissions.addAll(SUBCOMMANDS.keySet().stream().map(s -> BASE_PERM + s).toList());

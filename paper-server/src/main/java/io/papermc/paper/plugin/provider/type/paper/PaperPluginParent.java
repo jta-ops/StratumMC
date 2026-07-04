@@ -128,7 +128,7 @@ public class PaperPluginParent {
 
         @Override
         public String toString() {
-            return "PaperBootstrapProvider{" +
+            return "StratumBootstrapProvider{" +
                 "parent=" + PaperPluginParent.this +
                 "status=" + status +
                 ", lastProvided=" + lastProvided +
@@ -243,7 +243,7 @@ public class PaperPluginParent {
 
         @Override
         public String toString() {
-            return "PaperServerPluginProvider{" +
+            return "StratumServerPluginProvider{" +
                 "parent=" + PaperPluginParent.this +
                 "bootstrapProvider=" + bootstrapProvider +
                 ", status=" + status +
@@ -254,7 +254,7 @@ public class PaperPluginParent {
 
     @Override
     public String toString() {
-        return "PaperPluginParent{" +
+        return "StratumPluginParent{" +
             "path=" + path +
             ", jarFile=" + jarFile +
             ", description=" + description +

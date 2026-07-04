@@ -76,7 +76,7 @@ public class PaperFluidData implements FluidData {
 
     @Override
     public String toString() {
-        return "PaperFluidData{" + this.state + "}";
+        return "StratumFluidData{" + this.state + "}";
     }
 
     public static PaperFluidData createData(final FluidState state) {

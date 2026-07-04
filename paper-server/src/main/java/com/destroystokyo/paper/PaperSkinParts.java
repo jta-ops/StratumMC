@@ -88,7 +88,7 @@ public final class PaperSkinParts implements SkinParts {
 
     @Override
     public String toString() {
-        return toString(this, "PaperSkinParts");
+        return toString(this, "StratumSkinParts");
     }
 
     private static String toString(final SkinParts parts, final String name) {
@@ -211,7 +211,7 @@ public final class PaperSkinParts implements SkinParts {
 
         @Override
         public String toString() {
-            return PaperSkinParts.toString(this, "PaperSkinParts.Mutable");
+            return PaperSkinParts.toString(this, "StratumSkinParts.Mutable");
         }
     }
 }

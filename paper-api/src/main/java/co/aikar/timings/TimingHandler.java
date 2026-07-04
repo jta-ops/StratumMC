@@ -127,7 +127,7 @@ class TimingHandler implements Timing {
         while ((last = TIMING_STACK.removeLast()) != this) {
             last.timingDepth = 0;
             if ("Minecraft".equalsIgnoreCase(last.identifier.group)) {
-                Logger.getGlobal().log(Level.SEVERE, "TIMING_STACK_CORRUPTION - Look above this for any errors and report this to Paper unless it has a plugin in the stack trace (" + last.identifier + " did not stopTiming)");
+                Logger.getGlobal().log(Level.SEVERE, "TIMING_STACK_CORRUPTION - Look above this for any errors and report this to Stratum unless it has a plugin in the stack trace (" + last.identifier + " did not stopTiming)");
             } else {
                 Logger.getGlobal().log(Level.SEVERE, "TIMING_STACK_CORRUPTION - Report this to the plugin " + last.identifier.group + " (Look for errors above this in the logs) (" + last.identifier + " did not stopTiming)", new Throwable());
             }

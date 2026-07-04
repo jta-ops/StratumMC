@@ -188,7 +188,7 @@ public class PaperPluginClassLoader extends PaperSimplePluginClassLoader impleme
 
     @Override
     public String toString() {
-        return "PaperPluginClassLoader{" +
+        return "StratumPluginClassLoader{" +
             "libraryLoader=" + this.libraryLoader +
             ", seenIllegalAccess=" + this.seenIllegalAccess +
             ", loadedJavaPlugin=" + this.loadedJavaPlugin +
