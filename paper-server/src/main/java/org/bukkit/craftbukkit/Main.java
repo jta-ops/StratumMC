@@ -201,6 +201,7 @@ public class Main {
                 System.setProperty("library.jansi.version", "Stratum"); // Paper - set meaningless jansi version to prevent git builds from crashing on Windows
                 System.setProperty("jdk.console", "java.base"); // Paper - revert default console provider back to java.base so we can have our own jline
 
+                mc.stratum.console.QuietStartupFilter.install(); // Stratum - quiet startup console
                 io.papermc.paper.PaperBootstrap.boot(options);
             } catch (Throwable t) {
                 t.printStackTrace();
