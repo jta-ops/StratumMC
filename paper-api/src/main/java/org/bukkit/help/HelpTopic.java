@@ -1,7 +1,6 @@
 package org.bukkit.help;
 
 import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -24,13 +23,13 @@ public abstract class HelpTopic {
     protected String amendedPermission = null;
 
     /**
-     * Determines if a {@link Player} is allowed to see this help topic.
+     * Determines if a {@link CommandSender} is allowed to see this help topic.
      * <p>
      * HelpTopic implementations should take server administrator wishes into
      * account as set by the {@link HelpTopic#amendCanSee(String)} function.
      *
-     * @param player The Player in question.
-     * @return True of the Player can see this help topic, false otherwise.
+     * @param player The sender in question.
+     * @return True if the sender can see this help topic, false otherwise.
      */
     public abstract boolean canSee(@NotNull CommandSender player);
 

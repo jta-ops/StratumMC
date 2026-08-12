@@ -38,7 +38,7 @@ public interface Turtle extends Animals {
     void setHome(@NotNull Location location);
 
     /**
-     * Check if turtle is currently pathfinding to it's home
+     * Checks if the turtle is currently pathfinding to its home.
      *
      * @return True if going home
      */
